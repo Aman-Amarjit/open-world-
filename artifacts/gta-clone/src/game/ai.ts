@@ -1015,15 +1015,25 @@ function driveCivilian(
     const dot = (dx * fwdX + dy * fwdY) / (d || 1);
     if (dot > 0.5 && d < frontObstacle) frontObstacle = d;
   }
-  if (frontObstacle < 30) {
+  // Following distance widened: a car body is ~40 px so the old 30 px
+  // full-brake threshold meant cars overlapped the vehicle ahead. New
+  // thresholds (50 / 85) leave a proper gap and prevent pile-ups.
+  if (frontObstacle < 50) {
     throttle = 0;
     brake = 1;
+    // When stopped close behind another car, STRAIGHTEN the wheels —
+    // otherwise we keep steering toward the next waypoint and nose
+    // diagonally out of our lane, causing the staircase pile-up look.
+    v.steer = 0;
     // Per-second honk rate (~1/s), not per-frame. The old `< 0.05` triggered
     // about three times a second at 60fps, which was a constant beep storm.
     if (v.honkTimer <= 0 && Math.random() < 1.0 * dt) v.honkTimer = 0.6;
-  } else if (frontObstacle < 60) {
+  } else if (frontObstacle < 85) {
     throttle = 0.15;
     brake = 0.4;
+    // Crawling — partially damp the steering toward the waypoint so we
+    // ease into the queue straight rather than veering sideways.
+    v.steer *= 0.4;
   }
 
   // Approach intersection — if there's perpendicular traffic close, yield.
