@@ -274,9 +274,15 @@ export function tick(game: Game, dt: number) {
     if (state.skidMarks[i]!.alpha <= 0) state.skidMarks.splice(i, 1);
   }
 
-  // Decals fade slowly
-  for (const d of state.decals) {
-    d.alpha = Math.max(0.4, d.alpha - dt * 0.005);
+  // Decals fade slowly to zero (was clamped at 0.4 forever, leading to
+  // permanent blood splatter buildup). Remove fully-faded decals, and cap
+  // the total to avoid unbounded clutter on long sessions.
+  for (let i = state.decals.length - 1; i >= 0; i--) {
+    state.decals[i]!.alpha -= dt * 0.012;
+    if (state.decals[i]!.alpha <= 0) state.decals.splice(i, 1);
+  }
+  if (state.decals.length > 80) {
+    state.decals.splice(0, state.decals.length - 80);
   }
 
   // Pickup collection

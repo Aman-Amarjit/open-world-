@@ -58,178 +58,84 @@ export function renderWorld(rc: RenderContext) {
       const h3 = ((seed + 0x9e3779b9) * 0x85ebca6b) >>> 0;
       switch (t.type) {
         case "grass": {
-          // ── Mottled lawn with clusters of blades, occasional flowers/dirt ──
+          // ── Clean GTA-style lawn: solid green base with fine speckle for
+          //    texture. No fake-grunge blobs that look ugly at zoom. ──
           const lush = t.variant! >= 4;
           const base = timeFilter(state.timeOfDay, lush ? "#5a8a3a" : "#4a7a3f");
-          const dark = shadeHex(base, -10);
-          const lite = shadeHex(base, 14);
           ctx.fillStyle = base;
           ctx.fillRect(px, py, TILE, TILE);
-          // 2 darker mottle patches (varied position per tile)
-          ctx.fillStyle = dark;
-          ctx.beginPath();
-          ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 8 + (h3 % 6), 5 + (h1 % 4), 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.beginPath();
-          ctx.ellipse(px + (h2 % TILE), py + (h3 % TILE), 6 + (h1 % 5), 4 + (h2 % 3), 0, 0, Math.PI * 2);
-          ctx.fill();
-          // Grass blade clusters (groups of 3 short upright lines)
-          ctx.strokeStyle = lite;
-          ctx.lineWidth = 0.7;
-          for (let cluster = 0; cluster < 4; cluster++) {
-            const cx = px + ((h1 >> (cluster * 4)) % TILE);
-            const cy = py + ((h2 >> (cluster * 3)) % TILE);
-            ctx.beginPath();
-            for (let bi = 0; bi < 3; bi++) {
-              ctx.moveTo(cx + bi * 1.5, cy + 2);
-              ctx.lineTo(cx + bi * 1.5 - 0.3, cy - 1);
-            }
-            ctx.stroke();
-          }
-          // Occasional yellow flower or dirt scuff
-          if ((h3 & 0xf) === 0) {
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#fff2a0");
-            ctx.beginPath();
-            ctx.arc(px + (h1 % (TILE - 6)) + 3, py + (h2 % (TILE - 6)) + 3, 1.4, 0, Math.PI * 2);
-            ctx.fill();
-          } else if ((h3 & 0xf) === 1) {
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#7a6248");
-            ctx.beginPath();
-            ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 5, 3, 0, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          break;
-        }
-        case "sidewalk": {
-          // ── Four-up concrete slabs with per-slab tone variation, recessed
-          //    grooves (shadow + highlight), worn corners, occasional stains ──
-          const baseSw = timeFilter(state.timeOfDay, "#9a8f80");
-          // Per-slab variation: each of the 4 quadrants gets a slight tone shift
-          for (let qy = 0; qy < 2; qy++) {
-            for (let qx = 0; qx < 2; qx++) {
-              const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
-              const tone = ((qHash % 11) - 5); // -5..+5 brightness
-              ctx.fillStyle = shadeHex(baseSw, tone);
-              ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
-            }
-          }
-          // Subtle large-scale mottle (weathering wash)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(80,70,60,0.06)");
-          ctx.beginPath();
-          ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 18, 12, 0, 0, Math.PI * 2);
-          ctx.fill();
-          // Recessed expansion joints — dark line + 1px highlight on south side
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#5e5446");
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.moveTo(px, py + TILE / 2);
-          ctx.lineTo(px + TILE, py + TILE / 2);
-          ctx.moveTo(px + TILE / 2, py);
-          ctx.lineTo(px + TILE / 2, py + TILE);
-          ctx.stroke();
-          // Highlight just south of the horizontal joint (suggests recess)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(255,245,225,0.18)");
-          ctx.fillRect(px, py + TILE / 2 + 1.2, TILE, 0.7);
-          ctx.fillRect(px + TILE / 2 + 1.2, py, 0.7, TILE);
-          // Worn corner chamfers at slab intersections
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#7a6f5e");
-          ctx.fillRect(px + TILE / 2 - 1, py + TILE / 2 - 1, 3, 3);
-          // Aggregate speckle (concrete grain) — varied sizes
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#7a6f60");
-          for (let i = 0; i < 5; i++) {
-            const sx = px + ((h1 >> (i * 2)) % TILE);
-            const sy = py + ((h2 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#b8ad9a");
-          for (let i = 0; i < 4; i++) {
-            const sx = px + ((h2 >> (i * 2)) % TILE);
-            const sy = py + ((h3 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          // Occasional darker stain (oil drip, gum, etc.)
-          if ((h3 & 0x1f) === 0) {
-            ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(40,30,25,0.35)");
-            ctx.beginPath();
-            ctx.ellipse(px + (h1 % (TILE - 8)) + 4, py + (h2 % (TILE - 8)) + 4, 3, 2, h3 % 3, 0, Math.PI * 2);
-            ctx.fill();
-          }
-          break;
-        }
-        case "road":
-        case "intersection": {
-          // ── Layered asphalt: dark base + mottled mid-tone + aggregate
-          //    pebbles + occasional patches/oil stains/cracks ──
-          const asphalt = timeFilter(state.timeOfDay, "#383838");
-          ctx.fillStyle = asphalt;
-          ctx.fillRect(px, py, TILE, TILE);
-          // Large mottle blob — uneven asphalt look (subtle)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(70,70,70,0.22)");
-          ctx.beginPath();
-          ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 16, 11, 0, 0, Math.PI * 2);
-          ctx.fill();
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.18)");
-          ctx.beginPath();
-          ctx.ellipse(px + (h2 % TILE), py + (h3 % TILE), 12, 8, 0, 0, Math.PI * 2);
-          ctx.fill();
-          // Aggregate pebbles (lighter chips of stone in asphalt) — varied tones
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#5a5a5a");
+          // Slightly darker speckle for grass-blade texture
+          ctx.fillStyle = shadeHex(base, -8);
           for (let i = 0; i < 8; i++) {
             const sx = px + ((h1 >> (i * 2)) % TILE);
             const sy = py + ((h2 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
           }
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#6a6a68");
-          for (let i = 0; i < 4; i++) {
-            const sx = px + ((h3 >> (i * 2)) % TILE);
-            const sy = py + ((h1 >> (i * 4)) % TILE);
-            ctx.fillRect(sx, sy, 1.5, 1.5);
-          }
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#252525");
-          for (let i = 0; i < 6; i++) {
-            const sx = px + ((h2 >> (i * 3)) % TILE);
-            const sy = py + ((h3 >> (i * 2)) % TILE);
+          // Lighter speckle (highlight)
+          ctx.fillStyle = shadeHex(base, 10);
+          for (let i = 0; i < 5; i++) {
+            const sx = px + ((h2 >> (i * 2)) % TILE);
+            const sy = py + ((h3 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
           }
-          // Occasional repair patch — slightly lighter rectangle outlined dark
-          if ((h3 & 0x3f) === 0) {
-            const pw = 14 + (h1 % 14);
-            const ph = 10 + (h2 % 10);
-            const ppx = px + (h1 % (TILE - pw));
-            const ppy = py + (h2 % (TILE - ph));
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#444");
-            ctx.fillRect(ppx, ppy, pw, ph);
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1a1a1a");
-            ctx.lineWidth = 0.5;
-            ctx.strokeRect(ppx + 0.25, ppy + 0.25, pw - 0.5, ph - 0.5);
+          break;
+        }
+        case "sidewalk": {
+          // ── GTA-style 4-up concrete slabs: tan base, per-slab tone shifts,
+          //    crisp dark grout joints. NO weathering blobs or oil stains. ──
+          const baseSw = timeFilter(state.timeOfDay, "#beb09a");
+          // Per-slab tone variation (subtle, ±4)
+          for (let qy = 0; qy < 2; qy++) {
+            for (let qx = 0; qx < 2; qx++) {
+              const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
+              const tone = ((qHash % 9) - 4); // -4..+4
+              ctx.fillStyle = shadeHex(baseSw, tone);
+              ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
+            }
           }
-          // Occasional oil stain (subtle dark blob)
-          if ((h2 & 0x3f) === 7) {
-            ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(15,12,8,0.45)");
-            ctx.beginPath();
-            ctx.ellipse(px + (h1 % (TILE - 12)) + 6, py + (h3 % (TILE - 8)) + 4, 5, 3, h3 % 3, 0, Math.PI * 2);
-            ctx.fill();
+          // Crisp dark grout joints between slabs (the "GTA tile lines")
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#6e6354");
+          ctx.fillRect(px, py + TILE / 2 - 0.5, TILE, 1);
+          ctx.fillRect(px + TILE / 2 - 0.5, py, 1, TILE);
+          // Tiny aggregate speckle for concrete texture (subtle, no blobs)
+          ctx.fillStyle = shadeHex(baseSw, -12);
+          for (let i = 0; i < 5; i++) {
+            const sx = px + ((h1 >> (i * 2)) % TILE);
+            const sy = py + ((h2 >> (i * 3)) % TILE);
+            ctx.fillRect(sx, sy, 1, 1);
           }
-          // Occasional branching crack (more natural than the old straight crack)
-          if (((x * 7 + y * 13) % 19) === 0) {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1a1a1a");
-            ctx.lineWidth = 0.5;
-            ctx.beginPath();
-            const cx = px + ((x * 11) % (TILE - 20)) + 10;
-            const cy = py + ((y * 7) % (TILE - 20)) + 10;
-            ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + 6, cy + 3);
-            ctx.lineTo(cx + 11, cy - 2);
-            ctx.lineTo(cx + 14, cy + 4);
-            // Branch
-            ctx.moveTo(cx + 6, cy + 3);
-            ctx.lineTo(cx + 8, cy + 7);
-            ctx.lineTo(cx + 12, cy + 9);
-            ctx.stroke();
+          ctx.fillStyle = shadeHex(baseSw, 8);
+          for (let i = 0; i < 4; i++) {
+            const sx = px + ((h2 >> (i * 2)) % TILE);
+            const sy = py + ((h3 >> (i * 3)) % TILE);
+            ctx.fillRect(sx, sy, 1, 1);
           }
-          // Tire skid (rare)
-          if (((x * 17 + y * 11) % 53) === 0 && t.type === "road") {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(15,15,15,0.7)");
+          break;
+        }
+        case "road":
+        case "intersection": {
+          // ── GTA-style asphalt: clean medium gray with slight blue tint,
+          //    minimal grain, NO blob-stains or patches. White lane lines. ──
+          const asphalt = timeFilter(state.timeOfDay, "#4a4d52");
+          ctx.fillStyle = asphalt;
+          ctx.fillRect(px, py, TILE, TILE);
+          // Light aggregate speckle (subtle, evenly distributed)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#5c5f63");
+          for (let i = 0; i < 6; i++) {
+            const sx = px + ((h1 >> (i * 2)) % TILE);
+            const sy = py + ((h2 >> (i * 3)) % TILE);
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Darker speckle (variation)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#3a3d42");
+          for (let i = 0; i < 5; i++) {
+            const sx = px + ((h2 >> (i * 2)) % TILE);
+            const sy = py + ((h3 >> (i * 3)) % TILE);
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Tire skid (very rare — no oil stains, patches, cracks)
+          if (((x * 17 + y * 11) % 89) === 0 && t.type === "road") {
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.55)");
             ctx.lineWidth = 1.5;
             ctx.beginPath();
             if (t.roadDir === "h") {
@@ -245,9 +151,9 @@ export function renderWorld(rc: RenderContext) {
             }
             ctx.stroke();
           }
-          // Lane markings — solid amber center, with edge-fade for worn look
+          // Lane markings — WHITE dashes (GTA1 style, was yellow)
           if (t.type === "road" && t.roadDir === "h") {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#e8c84a");
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#f0eee4");
             ctx.lineWidth = 1.5;
             ctx.setLineDash([12, 8]);
             const rowInBlock = y % 10;
@@ -259,7 +165,7 @@ export function renderWorld(rc: RenderContext) {
             }
             ctx.setLineDash([]);
           } else if (t.type === "road" && t.roadDir === "v") {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#e8c84a");
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#f0eee4");
             ctx.lineWidth = 1.5;
             ctx.setLineDash([12, 8]);
             const colInBlock = x % 10;
@@ -274,34 +180,20 @@ export function renderWorld(rc: RenderContext) {
           break;
         }
         case "crosswalk": {
-          // ── Worn zebra crossing: stripes have slightly varied brightness
-          //    (some more weathered) and dark edge fade for a painted-on look ──
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#383838");
+          // ── Clean white zebra stripes on asphalt base. No mottle, no
+          //    fake wear shading — looks crisp at all zoom levels. ──
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#4a4d52");
           ctx.fillRect(px, py, TILE, TILE);
-          // Asphalt mottle under stripes
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(70,70,70,0.18)");
-          ctx.beginPath();
-          ctx.ellipse(px + TILE / 2, py + TILE / 2, 18, 12, 0, 0, Math.PI * 2);
-          ctx.fill();
-          // Stripes — vary alpha per stripe for "worn" look
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#f0eee4");
           if (t.roadDir === "v") {
-            // Horizontal stripes
+            // Horizontal stripes (cars going N/S)
             for (let i = 0; i < 6; i++) {
-              const wear = 0.78 + (((h1 >> (i * 3)) & 0xf) / 0xf) * 0.22; // 0.78..1.0
-              ctx.fillStyle = timeFilter(state.timeOfDay, `rgba(245,245,238,${wear})`);
               ctx.fillRect(px + 4, py + 4 + i * 10, TILE - 8, 6);
-              // Subtle dark edge on south side of each stripe (depth)
-              ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.25)");
-              ctx.fillRect(px + 4, py + 4 + i * 10 + 6, TILE - 8, 0.5);
             }
           } else {
-            // Vertical stripes
+            // Vertical stripes (cars going E/W)
             for (let i = 0; i < 6; i++) {
-              const wear = 0.78 + (((h1 >> (i * 3)) & 0xf) / 0xf) * 0.22;
-              ctx.fillStyle = timeFilter(state.timeOfDay, `rgba(245,245,238,${wear})`);
               ctx.fillRect(px + 4 + i * 10, py + 4, 6, TILE - 8);
-              ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.25)");
-              ctx.fillRect(px + 4 + i * 10 + 6, py + 4, 0.5, TILE - 8);
             }
           }
           break;
@@ -408,17 +300,17 @@ export function renderWorld(rc: RenderContext) {
           break;
         }
         case "plaza": {
-          // ── Cut stone plaza: 4 quadrants of varied stone tone, recessed
-          //    grout joints (dark + highlight), occasional decorative tile ──
-          const baseSt = timeFilter(state.timeOfDay, "#b8b0a0");
+          // ── GTA-style cut-stone plaza: 4 tone-varied quadrants with crisp
+          //    dark grout joints. No transparent overlays, no fake highlights. ──
+          const baseSt = timeFilter(state.timeOfDay, "#c8bfac");
           for (let qy = 0; qy < 2; qy++) {
             for (let qx = 0; qx < 2; qx++) {
               const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
-              const tone = ((qHash % 13) - 6); // -6..+6
+              const tone = ((qHash % 11) - 5); // -5..+5
               ctx.fillStyle = shadeHex(baseSt, tone);
               ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
-              // Faint noise per slab for stone texture
-              ctx.fillStyle = shadeHex(baseSt, tone - 12);
+              // Faint per-slab grain
+              ctx.fillStyle = shadeHex(baseSt, tone - 14);
               for (let i = 0; i < 3; i++) {
                 const ssx = px + qx * (TILE / 2) + ((qHash >> i) % (TILE / 2));
                 const ssy = py + qy * (TILE / 2) + ((qHash >> (i + 2)) % (TILE / 2));
@@ -426,30 +318,14 @@ export function renderWorld(rc: RenderContext) {
               }
             }
           }
-          // Recessed grout: dark joint + bottom-right highlight
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#5e574a");
-          ctx.lineWidth = 1.2;
-          ctx.beginPath();
-          ctx.moveTo(px + TILE / 2, py);
-          ctx.lineTo(px + TILE / 2, py + TILE);
-          ctx.moveTo(px, py + TILE / 2);
-          ctx.lineTo(px + TILE, py + TILE / 2);
-          ctx.stroke();
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(255,250,235,0.18)");
-          ctx.fillRect(px + TILE / 2 + 1.2, py, 0.7, TILE);
-          ctx.fillRect(px, py + TILE / 2 + 1.2, TILE, 0.7);
-          // Outer slab edge
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#8a8275");
+          // Crisp grout joints (dark line at slab boundaries)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#6e6555");
+          ctx.fillRect(px, py + TILE / 2 - 0.5, TILE, 1);
+          ctx.fillRect(px + TILE / 2 - 0.5, py, 1, TILE);
+          // Outer slab edge (one solid tile boundary)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#988e7a");
           ctx.lineWidth = 0.8;
           ctx.strokeRect(px + 0.4, py + 0.4, TILE - 0.8, TILE - 0.8);
-          // Occasional accent tile (darker stone)
-          if ((h3 & 0xf) === 0) {
-            const aq = (h2 % 4); // which quadrant
-            const aqx = aq % 2;
-            const aqy = (aq >> 1) & 1;
-            ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(60,55,45,0.35)");
-            ctx.fillRect(px + aqx * (TILE / 2) + 4, py + aqy * (TILE / 2) + 4, TILE / 2 - 8, TILE / 2 - 8);
-          }
           break;
         }
       }
