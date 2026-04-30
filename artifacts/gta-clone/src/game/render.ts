@@ -110,6 +110,52 @@ export function renderWorld(rc: RenderContext) {
             const sy = py + ((h3 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
           }
+          // Per-tile street furniture (deterministic by hash so it's stable).
+          const swFurniture = h3 & 0x3f;
+          if (swFurniture === 0) {
+            // Manhole cover (cast iron disk with cross pattern)
+            const mcx = px + TILE / 2;
+            const mcy = py + TILE / 2;
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#3a342c");
+            ctx.beginPath();
+            ctx.arc(mcx, mcy, 6, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1a1714");
+            ctx.lineWidth = 0.6;
+            ctx.beginPath();
+            ctx.arc(mcx, mcy, 6, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#2a241c");
+            ctx.fillRect(mcx - 4, mcy - 0.4, 8, 0.8);
+            ctx.fillRect(mcx - 0.4, mcy - 4, 0.8, 8);
+          } else if (swFurniture === 1) {
+            // Fire hydrant (small red post near the curb edge)
+            const hx = px + 4 + (h1 % 4);
+            const hy = py + 4 + (h2 % 4);
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#b53028");
+            ctx.fillRect(hx - 1.5, hy - 2, 3, 5);
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#e84838");
+            ctx.fillRect(hx - 1.2, hy - 1.7, 0.6, 4.5);
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#3a1a14");
+            ctx.fillRect(hx - 2, hy + 3, 4, 0.6);
+          } else if (swFurniture === 2) {
+            // Accent slab — a darker stone block (decorative)
+            ctx.fillStyle = shadeHex(baseSw, -22);
+            ctx.fillRect(px + TILE / 2 - 6, py + TILE / 2 - 6, 12, 12);
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#5e5446");
+            ctx.lineWidth = 0.7;
+            ctx.strokeRect(px + TILE / 2 - 6, py + TILE / 2 - 6, 12, 12);
+          } else if (swFurniture === 3) {
+            // Trash bin (small dark rectangle with rim)
+            const tbx = px + TILE - 8;
+            const tby = py + TILE - 10;
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#2a2a2a");
+            ctx.fillRect(tbx, tby, 6, 8);
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#4a4a4a");
+            ctx.fillRect(tbx, tby, 6, 1.2);
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#1a1a1a");
+            ctx.fillRect(tbx + 2, tby + 2, 2, 1);
+          }
           break;
         }
         case "road":
@@ -132,6 +178,55 @@ export function renderWorld(rc: RenderContext) {
             const sx = px + ((h2 >> (i * 2)) % TILE);
             const sy = py + ((h3 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Occasional manhole cover (cast iron disk) — adds road furniture
+          if (((x * 13 + y * 23) % 47) === 0 && t.type === "road") {
+            const mcx = px + TILE / 2;
+            const mcy = py + TILE / 2;
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#26221d");
+            ctx.beginPath();
+            ctx.arc(mcx, mcy, 7, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#0e0c0a");
+            ctx.lineWidth = 0.8;
+            ctx.beginPath();
+            ctx.arc(mcx, mcy, 7, 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#1a1614");
+            ctx.fillRect(mcx - 5, mcy - 0.5, 10, 1);
+            ctx.fillRect(mcx - 0.5, mcy - 5, 1, 10);
+          }
+          // Stop line — solid white bar painted just before a crosswalk
+          // approach. We check if the next tile in our travel direction is a
+          // crosswalk; if so, draw the bar at the far edge of this tile.
+          if (t.type === "road") {
+            const stopColor =
+              state.timeOfDay === "night"
+                ? "#e8e8e0"
+                : state.timeOfDay === "dusk"
+                  ? "#ece9dc"
+                  : "#f0eee4";
+            if (t.roadDir === "h") {
+              const eastTile = world.tiles[y]?.[x + 1];
+              const westTile = world.tiles[y]?.[x - 1];
+              if (eastTile?.type === "crosswalk") {
+                ctx.fillStyle = stopColor;
+                ctx.fillRect(px + TILE - 4, py + TILE / 2 + 1, 2.5, TILE / 2 - 4);
+              } else if (westTile?.type === "crosswalk") {
+                ctx.fillStyle = stopColor;
+                ctx.fillRect(px + 1.5, py + 4, 2.5, TILE / 2 - 4);
+              }
+            } else if (t.roadDir === "v") {
+              const southTile = world.tiles[y + 1]?.[x];
+              const northTile = world.tiles[y - 1]?.[x];
+              if (southTile?.type === "crosswalk") {
+                ctx.fillStyle = stopColor;
+                ctx.fillRect(px + 4, py + TILE - 4, TILE / 2 - 4, 2.5);
+              } else if (northTile?.type === "crosswalk") {
+                ctx.fillStyle = stopColor;
+                ctx.fillRect(px + TILE / 2 + 1, py + 1.5, TILE / 2 - 4, 2.5);
+              }
+            }
           }
           // Tire skid (very rare — no oil stains, patches, cracks)
           if (((x * 17 + y * 11) % 89) === 0 && t.type === "road") {
@@ -932,6 +1027,50 @@ function drawBuilding(
     ctx.lineWidth = 0.5;
     ctx.strokeRect(px - ext + w * 0.45, py - ext + h * 0.6, 14, 8);
   }
+  // Satellite dish (every 6th)
+  if (seed % 6 === 0) {
+    const dx = px - ext + w * 0.4;
+    const dy = py - ext + h * 0.45;
+    ctx.fillStyle = "#cdcdcd";
+    ctx.beginPath();
+    ctx.ellipse(dx, dy, 5, 3, 0, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.strokeStyle = "#5a5a5a";
+    ctx.lineWidth = 0.5;
+    ctx.stroke();
+    ctx.fillStyle = "#3a3a3a";
+    ctx.fillRect(dx - 0.3, dy - 0.3, 0.6, 4); // mast
+  }
+  // Rooftop billboard (every 7th building, only on taller ones)
+  if (seed % 7 === 0 && b.height > 50) {
+    const bbx = px - ext + 4;
+    const bby = py - ext + h * 0.75;
+    const bbw = w - 10;
+    const bbh = 9;
+    // Frame
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(bbx - 1, bby - 1, bbw + 2, bbh + 2);
+    // Bright ad face — varies by id
+    const adColors = ["#e63946", "#f4a261", "#2a9d8f", "#264653", "#9b5de5"];
+    ctx.fillStyle = adColors[seed % adColors.length]!;
+    ctx.fillRect(bbx, bby, bbw, bbh);
+    // Fake "text" stripes on ad
+    ctx.fillStyle = "rgba(255,255,255,0.85)";
+    ctx.fillRect(bbx + 2, bby + 2, bbw - 4, 1.2);
+    ctx.fillRect(bbx + 2, bby + 5, (bbw - 4) * 0.6, 1);
+    // Support legs
+    ctx.fillStyle = "#2a2a2a";
+    ctx.fillRect(bbx + 2, bby + bbh, 1, 4);
+    ctx.fillRect(bbx + bbw - 3, bby + bbh, 1, 4);
+    // Light rim at night
+    if (isNight) {
+      ctx.shadowColor = adColors[seed % adColors.length]!;
+      ctx.shadowBlur = 6;
+      ctx.fillStyle = adColors[seed % adColors.length]!;
+      ctx.fillRect(bbx, bby, bbw, 1);
+      ctx.shadowBlur = 0;
+    }
+  }
 
   // Windows - on walls (north and west visible) — now with frames + sills
   const windowBase = isNight ? "#ffe080" : "rgba(180,220,255,0.55)";
@@ -977,6 +1116,25 @@ function drawBuilding(
   }
   // Ground-floor windows on the south face (front of building) for shorter buildings
   if (b.height < 60) {
+    // FRONT DOOR — a single dark double-door panel near the center
+    const doorW = 8;
+    const doorH = 9;
+    const doorX = px + w / 2 - doorW / 2;
+    const doorY = py + h - doorH - 1;
+    // Door frame
+    ctx.fillStyle = shadeHex(wallColor, -38);
+    ctx.fillRect(doorX - 1, doorY - 1, doorW + 2, doorH + 1);
+    // Door panels (two halves)
+    ctx.fillStyle = shadeHex(wallColor, -28);
+    ctx.fillRect(doorX, doorY, doorW / 2 - 0.3, doorH);
+    ctx.fillRect(doorX + doorW / 2 + 0.3, doorY, doorW / 2 - 0.3, doorH);
+    // Door handles
+    ctx.fillStyle = "#d4af37";
+    ctx.fillRect(doorX + doorW / 2 - 1.3, doorY + doorH / 2, 0.8, 0.8);
+    ctx.fillRect(doorX + doorW / 2 + 0.5, doorY + doorH / 2, 0.8, 0.8);
+    // Stoop / threshold (slightly lighter strip in front)
+    ctx.fillStyle = shadeHex(wallColor, -10);
+    ctx.fillRect(doorX - 2, doorY + doorH, doorW + 4, 1);
     const groundRows = 1;
     const groundCols = Math.max(2, Math.floor(w / 14));
     for (let c = 0; c < groundCols; c++) {
