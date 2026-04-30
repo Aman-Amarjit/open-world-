@@ -128,6 +128,13 @@ export interface Human {
   busted: boolean;
   // death animation progress 0..1 (0 = standing, 1 = fully collapsed)
   deathAnim: number;
+  // Brief invulnerability after a vehicle hit (player only — prevents one
+  // frame of car-overlap from instantly draining all HP).
+  hitCooldown: number;
+  // Sprint stamina (player only). 1 = full, 0 = exhausted (must regen before
+  // sprinting again). Decreases while sprinting, regenerates while walking.
+  stamina: number;
+  staminaLocked: boolean;
 }
 
 export type AnimalKind = "dog" | "cat" | "pigeon";
@@ -276,6 +283,13 @@ export interface Input {
   enter: boolean;
   fire: boolean;
   handbrake: boolean;
+  // Shift is reused for two purposes depending on context:
+  //   - In a vehicle: handbrake (`handbrake`).
+  //   - On foot: sprint (`sprint`).
+  // Both flags are set/cleared together by the input layer so the player can
+  // hold Shift universally; the player-update code picks whichever is
+  // appropriate for the current state.
+  sprint: boolean;
   // mouse
   mouseX: number;
   mouseY: number;
@@ -350,4 +364,12 @@ export interface GameState {
   missionsCompleted: number;
   // Cooldown before next mission spawns once map is empty.
   missionSpawnTimer: number;
+  // ---- TRAFFIC SIGNALS ----
+  // City-wide synchronized signal. `trafficPhase` cycles 0 → 1 every
+  // TRAFFIC_CYCLE seconds (with a brief yellow window at end of each phase):
+  //   phase 0  = N-S green  (cars on vertical roads go, horizontal stops)
+  //   phase 1  = E-W green  (cars on horizontal roads go, vertical stops)
+  trafficPhase: 0 | 1;
+  // Time spent in current phase (resets on toggle).
+  trafficPhaseTimer: number;
 }

@@ -184,12 +184,27 @@ export function renderWorld(rc: RenderContext) {
           break;
         }
         case "crosswalk": {
+          // Asphalt base
           ctx.fillStyle = timeFilter(state.timeOfDay, "#3a3a3a");
           ctx.fillRect(px, py, TILE, TILE);
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#e0e0e0");
-          for (let i = 0; i < 6; i++) {
-            ctx.fillRect(px + 4 + i * 10, py + 4, 6, TILE - 8);
+          // Stripe orientation: a crosswalk on a vertical road (cars going N/S)
+          // shows HORIZONTAL stripes; a crosswalk on a horizontal road shows
+          // VERTICAL stripes. Stripes are perpendicular to the flow of cars.
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#f0f0f0");
+          if (t.roadDir === "v") {
+            // Cars go N/S → stripes are horizontal
+            for (let i = 0; i < 6; i++) {
+              ctx.fillRect(px + 4, py + 4 + i * 10, TILE - 8, 6);
+            }
+          } else {
+            // Cars go E/W (or unspecified) → stripes are vertical
+            for (let i = 0; i < 6; i++) {
+              ctx.fillRect(px + 4 + i * 10, py + 4, 6, TILE - 8);
+            }
           }
+          // Stop line (a thin solid white bar) on the side of the crosswalk
+          // closer to the intersection, so cars can visually "stop at the line".
+          // (Skipped here — stop line is implicit via the AI's stop distance.)
           break;
         }
         case "building": {
@@ -507,6 +522,11 @@ export function renderWorld(rc: RenderContext) {
   if (state.weather === "rain" || state.weather === "storm") {
     drawRain(ctx, state, rc);
   }
+
+  // ----- TRAFFIC LIGHTS (world space) -----
+  // Small light heads on each corner of every visible intersection. Color
+  // reflects the city-wide trafficPhase: red/yellow/green per direction.
+  drawTrafficLights(rc);
 
   // ----- MISSION MARKERS (world space) -----
   // Draw available mission pillars (pulsing column of light) and the active
@@ -1710,17 +1730,101 @@ function drawRain(ctx: CanvasRenderingContext2D, state: GameState, rc: RenderCon
   );
 }
 
+// ─── TRAFFIC LIGHTS ─────────────────────────────────────────────────────────
+// At each intersection corner, draw a small 3-bulb traffic light head facing
+// the road it controls. Active bulb is bright (red/yellow/green) and the
+// other two are dim. trafficPhase 0 = N/S green (E/W red), 1 = E/W green
+// (N/S red). Last 1.5s of the green window = yellow.
+function drawTrafficLights(rc: RenderContext) {
+  const { ctx, world, state } = rc;
+  const cam = state.camera;
+  const halfW = rc.viewW / cam.zoom / 2 + 80;
+  const halfH = rc.viewH / cam.zoom / 2 + 80;
+  const TRAFFIC_GREEN = 14;
+  const phase = state.trafficPhase;
+  const yellow = state.trafficPhaseTimer > TRAFFIC_GREEN - 1.5;
+  // ns = north-south traffic, ew = east-west traffic
+  const nsState: "red" | "yellow" | "green" =
+    phase === 0 ? (yellow ? "yellow" : "green") : "red";
+  const ewState: "red" | "yellow" | "green" =
+    phase === 1 ? (yellow ? "yellow" : "green") : "red";
+
+  const drawHead = (
+    cx: number,
+    cy: number,
+    facing: "n" | "s" | "e" | "w",
+    s: "red" | "yellow" | "green",
+  ) => {
+    // Rotate so bulbs run along the road. NS-controlling lights mount on
+    // the curb facing the oncoming N or S traffic and have bulbs stacked
+    // vertically; EW-controlling lights mount facing E or W with bulbs
+    // stacked horizontally.
+    const vertical = facing === "n" || facing === "s";
+    const w = vertical ? 7 : 22;
+    const h = vertical ? 22 : 7;
+    // Housing
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 0.6;
+    ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
+    // Bulbs (top→bottom = R,Y,G when vertical; left→right = R,Y,G when horizontal)
+    const bulb = (i: number, color: string, on: boolean) => {
+      let bx: number;
+      let by: number;
+      if (vertical) {
+        bx = cx;
+        by = cy - h / 2 + 4 + i * 7;
+      } else {
+        bx = cx - w / 2 + 4 + i * 7;
+        by = cy;
+      }
+      ctx.beginPath();
+      ctx.arc(bx, by, 2.2, 0, Math.PI * 2);
+      ctx.fillStyle = on ? color : "#2a2a2a";
+      ctx.fill();
+      if (on) {
+        // Soft halo for on-bulb
+        const grd = ctx.createRadialGradient(bx, by, 0, bx, by, 7);
+        grd.addColorStop(0, color.replace("rgb", "rgba").replace(")", ",0.55)"));
+        grd.addColorStop(1, color.replace("rgb", "rgba").replace(")", ",0)"));
+        ctx.fillStyle = grd;
+        ctx.beginPath();
+        ctx.arc(bx, by, 7, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    };
+    bulb(0, "rgb(230,40,40)", s === "red");
+    bulb(1, "rgb(240,200,30)", s === "yellow");
+    bulb(2, "rgb(60,210,80)", s === "green");
+  };
+
+  for (const node of world.roadGraph) {
+    if (Math.abs(node.x - cam.x) > halfW + TILE) continue;
+    if (Math.abs(node.y - cam.y) > halfH + TILE) continue;
+    // Place 4 lights, one per corner, each controlling the lane that approaches
+    // the intersection from its side. Offsets are at the edge of the
+    // intersection box (intersection is 4 tiles, ~256px square; node is the
+    // center, so half-width is ~128px). We shrink slightly so they sit on the
+    // sidewalk corner.
+    const off = TILE * 1.9;
+    // North-facing head (controls cars driving south, i.e. the southbound lane
+    // approaching from the NW corner). Mount at the NW corner of the box.
+    drawHead(node.x - off, node.y - off, "s", nsState);
+    // South-facing head at SE corner — controls northbound cars
+    drawHead(node.x + off, node.y + off, "n", nsState);
+    // East-facing head at NE corner — controls westbound cars
+    drawHead(node.x + off, node.y - off, "w", ewState);
+    // West-facing head at SW corner — controls eastbound cars
+    drawHead(node.x - off, node.y + off, "e", ewState);
+  }
+}
+
 // Night lighting pass: drawn AFTER the dark vignette using "lighter" blending so
 // every light source genuinely punches through the darkness instead of just
-// stacking color on top.
-//   * Streetlamp halos at every intersection (4 corners), with the lamp post
-//     itself pulsing slightly.
-//   * Window glow on nearby buildings (reads as "the city is alive").
-//   * Headlight cones from every vehicle (real cone shape, not a circle).
-//   * Always-on tail/brake glow from every vehicle.
-//   * Police strobe halos.
-// `intensity` scales overall brightness so dusk gets a subtler version of this
-// pass without us writing a second function.
+// stacking color on top. Includes streetlamp halos, window glow, headlight
+// cones, tail/brake glow, and police strobes. `intensity` scales overall
+// brightness so dusk gets a subtler version of this pass.
 function drawNightLights(rc: RenderContext, intensity = 1) {
   const { ctx, world, state } = rc;
   const cam = state.camera;

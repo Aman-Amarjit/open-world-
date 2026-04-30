@@ -226,6 +226,9 @@ export function createHuman(
     isPlayer: kind === "player",
     busted: false,
     deathAnim: 0,
+    hitCooldown: 0,
+    stamina: 1,
+    staminaLocked: false,
   };
 }
 

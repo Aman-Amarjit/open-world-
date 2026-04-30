@@ -181,12 +181,25 @@ export function updateHuman(
     h.angle = h.inVehicle.angle;
     return;
   }
-  // Movement: input or AI sets vx/vy
-  // friction on stop
-  if (h.kind === "player" && (h.vx === 0 && h.vy === 0)) {
-    // no friction needed, set elsewhere
-  } else {
-    // walk velocity is already set by AI/input
+  // ---- DEAD NPCs: corpses should NOT keep walking forever. Apply heavy
+  // friction so the body slides briefly from any car-impact velocity then
+  // settles. No walk animation, no facing-direction updates while dead.
+  if (h.hp <= 0 && !h.isPlayer) {
+    h.vx *= Math.pow(0.0005, dt); // ~99.95% per second decay
+    h.vy *= Math.pow(0.0005, dt);
+    if (Math.hypot(h.vx, h.vy) < 0.5) {
+      h.vx = 0;
+      h.vy = 0;
+    }
+    const nx = h.x + h.vx * dt;
+    const ny = h.y + h.vy * dt;
+    if (!isSolidAt(world, nx, h.y)) h.x = nx;
+    else h.vx = 0;
+    if (!isSolidAt(world, h.x, ny)) h.y = ny;
+    else h.vy = 0;
+    if (h.fireTimer > 0) h.fireTimer -= dt;
+    if (h.punchTimer > 0) h.punchTimer -= dt;
+    return;
   }
   const nx = h.x + h.vx * dt;
   const ny = h.y + h.vy * dt;
@@ -528,14 +541,38 @@ export function vehicleVsHuman(state: GameState) {
       if (Math.abs(lx) > hl || Math.abs(ly) > hw) continue;
 
       if (sp > 30) {
-        h.hp -= sp * 0.4 * v.mass;
-        h.vx = v.vx * 0.5;
-        h.vy = v.vy * 0.5;
-        spawnBlood(state, h.x, h.y);
-        if (h.hp <= 0) {
-          if (v.driver?.isPlayer) {
-            addScore(state, 100, "Roadkill +100");
-            raiseWanted(state, h.kind === "police" ? 2 : 1);
+        // Damage scaling — vehicles used to deal `sp * 0.4 * mass` which at
+        // typical city speeds (sp ~ 150, mass ~ 2) one-shot the 100-HP player
+        // on a single brush. Use a much gentler curve for the player and
+        // require a real impact (closing speed > 60), with a per-hit cap and
+        // a short i-frame window to prevent multi-frame overlap deleting all
+        // HP in one tick. NPCs still get squished hard, as expected.
+        if (h.isPlayer) {
+          if (h.hitCooldown <= 0 && sp > 60) {
+            const raw = (sp - 60) * 0.12 * v.mass; // softer curve, threshold
+            const dmg = Math.min(raw, 28); // cap so a single hit ≤ 28 dmg
+            h.hp -= dmg;
+            h.vx = v.vx * 0.6;
+            h.vy = v.vy * 0.6;
+            h.hitCooldown = 0.6; // brief invuln window after a hit
+            spawnBlood(state, h.x, h.y);
+            state.damageFlash = Math.min(1, state.damageFlash + 0.5);
+            state.camera.shake = Math.max(state.camera.shake, 0.4);
+          } else {
+            // still nudge the player out of the car so they don't get stuck
+            h.vx = v.vx * 0.4;
+            h.vy = v.vy * 0.4;
+          }
+        } else {
+          h.hp -= sp * 0.4 * v.mass;
+          h.vx = v.vx * 0.5;
+          h.vy = v.vy * 0.5;
+          spawnBlood(state, h.x, h.y);
+          if (h.hp <= 0) {
+            if (v.driver?.isPlayer) {
+              addScore(state, 100, "Roadkill +100");
+              raiseWanted(state, h.kind === "police" ? 2 : 1);
+            }
           }
         }
       } else {

@@ -77,6 +77,7 @@ export function createGame(seed = 42): Game {
       enter: false,
       fire: false,
       handbrake: false,
+      sprint: false,
       mouseX: 0,
       mouseY: 0,
       mouseDown: false,
@@ -110,6 +111,8 @@ export function createGame(seed = 42): Game {
     activeMission: null,
     missionsCompleted: 0,
     missionSpawnTimer: 6,
+    trafficPhase: 0,
+    trafficPhaseTimer: 0,
   };
   // Scatter environment props: trees on grass, hydrants/mailboxes/lamps along sidewalks
   for (let ty = 0; ty < world.tiles.length; ty++) {
@@ -309,6 +312,22 @@ export function tick(game: Game, dt: number) {
 
   // Damage flash decay
   if (state.damageFlash > 0) state.damageFlash = Math.max(0, state.damageFlash - dt * 2);
+
+  // Player car-hit i-frame countdown
+  if (state.player.hitCooldown > 0) {
+    state.player.hitCooldown = Math.max(0, state.player.hitCooldown - dt);
+  }
+
+  // ---- TRAFFIC SIGNAL PHASE ----
+  // Toggle the city-wide N-S / E-W signal phase. Each green window is
+  // TRAFFIC_GREEN seconds. The yellow window is implicit — drivers begin
+  // braking based on the timer at lights, but the phase only flips at the end.
+  state.trafficPhaseTimer += dt;
+  const TRAFFIC_GREEN = 14;
+  if (state.trafficPhaseTimer >= TRAFFIC_GREEN) {
+    state.trafficPhase = (state.trafficPhase === 0 ? 1 : 0) as 0 | 1;
+    state.trafficPhaseTimer = 0;
+  }
 
   // Camera follow
   updateCamera(state, dt);
@@ -514,11 +533,28 @@ function applyPlayerInput(state: GameState, dt: number) {
     if (inp.left) mx -= 1;
     if (inp.right) mx += 1;
     const m = Math.hypot(mx, my);
+    // ---- SPRINT (Shift) ----
+    // Hold Shift while moving on foot to sprint at ~1.65× speed. Stamina
+    // drains while sprinting and regenerates while jogging or standing.
+    // When stamina hits 0 the player is "winded" — sprint locks out until
+    // stamina recovers above 35%. This stops the player from infinitely
+    // tap-spamming sprint during chases.
+    if (p.staminaLocked && p.stamina > 0.35) p.staminaLocked = false;
+    const wantsSprint = inp.sprint && m > 0 && !p.staminaLocked;
+    if (wantsSprint) {
+      p.stamina = Math.max(0, p.stamina - dt * 0.42);
+      if (p.stamina <= 0) p.staminaLocked = true;
+    } else {
+      // Faster regen when standing still, slower while walking
+      const regen = m > 0 ? 0.18 : 0.32;
+      p.stamina = Math.min(1, p.stamina + dt * regen);
+    }
+    const sprintMul = wantsSprint ? 1.65 : 1;
     if (m > 0) {
       mx /= m;
       my /= m;
-      p.vx = mx * p.speed;
-      p.vy = my * p.speed;
+      p.vx = mx * p.speed * sprintMul;
+      p.vy = my * p.speed * sprintMul;
     } else {
       p.vx = 0;
       p.vy = 0;
@@ -1104,8 +1140,23 @@ function updateAnimals(state: GameState, dt: number, world: WorldData) {
     } else {
       a.flyZ = Math.max(0, a.flyZ - dt * 2);
     }
-    a.x += a.vx * dt;
-    a.y += a.vy * dt;
+    // ---- COLLISION: keep land animals OUT OF BUILDINGS ----
+    // Pigeons in flight (flyZ > 0.3) are airborne and may pass over solid
+    // tiles. Cats and dogs walk on the ground and must respect walls. We do
+    // axis-separated movement so an animal sliding along a wall keeps moving
+    // along the unblocked axis instead of getting stuck.
+    const airborne = a.kind === "pigeon" && a.flyZ > 0.3;
+    const nx = a.x + a.vx * dt;
+    const ny = a.y + a.vy * dt;
+    if (airborne) {
+      a.x = nx;
+      a.y = ny;
+    } else {
+      if (!isSolidAt(world, nx, a.y)) a.x = nx;
+      else a.vx = -a.vx * 0.4; // bounce off
+      if (!isSolidAt(world, a.x, ny)) a.y = ny;
+      else a.vy = -a.vy * 0.4;
+    }
     // Vehicle roadkill
     for (const v of state.vehicles) {
       const sp = Math.hypot(v.vx, v.vy);

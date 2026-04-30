@@ -323,7 +323,27 @@ function updatePedestrian(
       const stepX = h.x + Math.cos(a) * 6;
       const stepY = h.y + Math.sin(a) * 6;
       const stepTile = tileAt(world, stepX, stepY);
-      if (stepTile && stepTile.type === "road") {
+      if (stepTile && (stepTile.type === "road" || stepTile.type === "crosswalk")) {
+        // ---- TRAFFIC SIGNAL ----
+        // A pedestrian crossing the road perpendicular to traffic has the
+        // walk signal when traffic is RED for that direction. We classify
+        // the crossing direction by the ped's intended step (NS vs EW) and
+        // wait at the curb if the corresponding cars currently have green.
+        const stepAx = Math.cos(a);
+        const stepAy = Math.sin(a);
+        const pedHeading: "ns" | "ew" =
+          Math.abs(stepAy) > Math.abs(stepAx) ? "ns" : "ew";
+        // The cars they'd be crossing in front of run perpendicular to their
+        // step direction.
+        const carsCrossing: "ns" | "ew" = pedHeading === "ns" ? "ew" : "ns";
+        const greenForPhase: "ns" | "ew" = state.trafficPhase === 0 ? "ns" : "ew";
+        const carsHaveGreen = carsCrossing === greenForPhase;
+        if (carsHaveGreen) {
+          // Don't step into traffic on a red walk signal.
+          h.vx *= 0.2;
+          h.vy *= 0.2;
+          return;
+        }
         let mustWait = false;
         for (const v of state.vehicles) {
           const sp2 = Math.hypot(v.vx, v.vy);
@@ -701,8 +721,18 @@ function updateCop(
       targetY = player.y + Math.sin(approachA + Math.PI) * 80;
     }
 
-    // BUST if close on foot
-    if (dToPlayer < 18 && !player.inVehicle && Math.hypot(player.vx, player.vy) < 30) {
+    // BUST if close on foot. At 1-3 stars cops want to ARREST you, not kill,
+    // so the bust radius is generous and they only need you to be roughly
+    // walking-paced. At 4+ stars cops shoot first (see below) and the bust
+    // radius tightens to vanilla. This is what the player asked for: "police
+    // need to catch me at 2-3 stars not kill me".
+    const arrestRadius = state.wantedLevel <= 3 ? 28 : 18;
+    const arrestSpeedCap = state.wantedLevel <= 3 ? 70 : 30;
+    if (
+      dToPlayer < arrestRadius &&
+      !player.inVehicle &&
+      Math.hypot(player.vx, player.vy) < arrestSpeedCap
+    ) {
       bustPlayer(state);
       return;
     }
@@ -723,9 +753,11 @@ function updateCop(
       if (Math.random() < 0.008) h.strafeDir *= -1;
     }
 
-    // Shoot only if wanted >= 2 (1-star = pursue & arrest only)
-    // Suppressor fires more often, flanker/cutoff fire less while moving
-    if (h.fireTimer <= 0 && dToPlayer < COP_GUN_RANGE && state.wantedLevel >= 2) {
+    // SHOOT only at wanted ≥ 4. At 1-3 stars cops use non-lethal pursuit:
+    // chase, surround, and tackle (see arrest block above). The player asked
+    // for cops to "catch" them at 2-3 stars instead of killing them.
+    // Suppressor still fires more often than flankers/cutoffs.
+    if (h.fireTimer <= 0 && dToPlayer < COP_GUN_RANGE && state.wantedLevel >= 4) {
       fireBulletWithLead(state, h, player, 18);
       const cooldown = h.squadRole === 0 ? 0.4 : h.squadRole === 1 ? 0.6 : 0.8;
       h.fireTimer = cooldown;
@@ -954,6 +986,22 @@ function driveCivilian(
     throttle = Math.min(throttle, 0.05);
     brake = Math.max(brake, 0.7);
   }
+  // ---- TRAFFIC SIGNAL ----
+  // If a signal-controlled intersection is in front of us and our direction
+  // has a red light, stop at the stop line (about 35 px back from the
+  // intersection center). Yellow phase (last 1.5 s of the green window)
+  // also makes us slow down and prepare to stop.
+  if (apx) {
+    const dToIntersection = dist(v.x, v.y, apx.x, apx.y);
+    const lightState = signalForVehicle(v, state); // "green" | "yellow" | "red"
+    if (lightState === "red" && dToIntersection > 28 && dToIntersection < 90) {
+      throttle = 0;
+      brake = Math.max(brake, 0.85);
+    } else if (lightState === "yellow" && dToIntersection > 28 && dToIntersection < 70) {
+      throttle = Math.min(throttle, 0.1);
+      brake = Math.max(brake, 0.55);
+    }
+  }
 
   // If pointing far off target (sharp turn), slow down
   if (Math.abs(diff) > 0.8 && sp > 80) {
@@ -983,6 +1031,25 @@ function approachingIntersection(v: Vehicle, world: WorldData): RoadNode | null 
     }
   }
   return best;
+}
+
+// Returns the signal state ("green"/"yellow"/"red") for the given vehicle
+// based on the approached intersection. We classify the car's heading as
+// either "ns" (north-south) or "ew" (east-west) and compare to the global
+// trafficPhase. The last 1.5 s of each green window is "yellow" — drivers
+// should brake and prepare to stop.
+function signalForVehicle(v: Vehicle, state: GameState): "green" | "yellow" | "red" {
+  // Heading = N/S if facing roughly along ±y, otherwise E/W.
+  const ax = Math.cos(v.angle);
+  const ay = Math.sin(v.angle);
+  const heading: "ns" | "ew" = Math.abs(ay) > Math.abs(ax) ? "ns" : "ew";
+  const greenForPhase: "ns" | "ew" = state.trafficPhase === 0 ? "ns" : "ew";
+  if (heading !== greenForPhase) return "red";
+  // We're on green. Check if we're in the last 1.5 s — that's yellow.
+  // We don't have access to TRAFFIC_GREEN at this scope so reuse a constant.
+  const TRAFFIC_GREEN = 14;
+  if (state.trafficPhaseTimer > TRAFFIC_GREEN - 1.5) return "yellow";
+  return "green";
 }
 
 function anyCrossingTraffic(
@@ -1160,8 +1227,10 @@ function drivePolicePursuit(
     }
   }
 
-  // Drive-by shoot (rear or side passenger) if close enough
-  if (state.wantedLevel >= 3 && h.fireTimer <= 0 && dToPlayer < 200) {
+  // Drive-by shoot — only at wanted ≥ 4. At 1-3 stars cops use the cruiser
+  // to ram, PIT, and box-in for an arrest, but no lethal gunfire from the
+  // car. Matches the on-foot non-lethal arrest rules above.
+  if (state.wantedLevel >= 4 && h.fireTimer <= 0 && dToPlayer < 200) {
     const a = angleTo(v.x, v.y, player.x, player.y);
     fireBulletWithLead(state, h, player, 16);
     h.fireTimer = 0.7;

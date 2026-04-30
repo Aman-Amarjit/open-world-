@@ -18,6 +18,7 @@ const SHOP_PROMPTS: Record<ShopKind, string> = {
 export function HUD({ state, world }: Props) {
   const p = state.player;
   const hpPct = (p.hp / p.maxHp) * 100;
+  const stamPct = Math.max(0, Math.min(1, p.stamina)) * 100;
   const stars = Array.from({ length: 6 }, (_, i) => i < state.wantedLevel);
   const hour = Math.floor((state.worldTime / 60) % 24);
   const min = Math.floor(state.worldTime % 60);
@@ -149,6 +150,25 @@ export function HUD({ state, world }: Props) {
           <div className="hud-value small">
             {Math.floor(p.hp)} / {p.maxHp}
           </div>
+          {!p.inVehicle && (
+            <>
+              <div className="hud-label" style={{ marginTop: 6 }}>
+                STAMINA {p.staminaLocked ? "(WINDED)" : ""}
+              </div>
+              <div className="hp-bar small">
+                <div
+                  className="hp-fill"
+                  style={{
+                    width: `${stamPct}%`,
+                    background: p.staminaLocked
+                      ? "linear-gradient(90deg,#a04040,#cf6868)"
+                      : "linear-gradient(90deg,#3aa0ff,#7ad0ff)",
+                  }}
+                  data-testid="stamina-fill"
+                />
+              </div>
+            </>
+          )}
         </div>
         <div className="weapon-card">
           <div className="hud-label">{p.weapon.toUpperCase()}</div>
@@ -396,7 +416,7 @@ export function HUD({ state, world }: Props) {
         <span>WASD move</span>
         <span>E enter/exit</span>
         <span>Space/Click fire</span>
-        <span>Shift handbrake</span>
+        <span>Shift sprint / handbrake</span>
         <span>P pause</span>
       </div>
     </div>

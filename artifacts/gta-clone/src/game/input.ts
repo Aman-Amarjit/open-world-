@@ -34,7 +34,10 @@ export function setupInput(state: GameState, canvas: HTMLCanvasElement) {
         break;
       case "ShiftLeft":
       case "ShiftRight":
+        // Shift = handbrake when in a vehicle, sprint when on foot. Both
+        // flags get set together; the player update picks whichever applies.
         inp.handbrake = true;
+        inp.sprint = true;
         break;
       case "KeyP":
       case "Escape":
@@ -66,6 +69,7 @@ export function setupInput(state: GameState, canvas: HTMLCanvasElement) {
       case "ShiftLeft":
       case "ShiftRight":
         inp.handbrake = false;
+        inp.sprint = false;
         break;
     }
   };

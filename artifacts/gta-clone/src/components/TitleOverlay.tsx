@@ -14,6 +14,7 @@ export function TitleOverlay({ onStart }: Props) {
           <div><kbd>E</kbd> enter / exit / carjack</div>
           <div><kbd>Space</kbd> or <kbd>Click</kbd> fire weapon</div>
           <div><kbd>Shift</kbd> handbrake</div>
+          <div><kbd>Shift</kbd> sprint (on foot)</div>
           <div><kbd>P</kbd> / <kbd>Esc</kbd> pause</div>
         </div>
         <button

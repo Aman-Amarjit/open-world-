@@ -386,15 +386,49 @@ export function generateWorld(seed: number): WorldData {
     }
   }
 
-  // Crosswalks at intersections
+  // ---- ZEBRA CROSSINGS ----
+  // Place a proper crosswalk band on each of the 4 sides of every
+  // intersection. The intersection occupies tiles (rx..rx+3, ry..ry+3).
+  // Crosswalks are 1-tile-wide painted bands that span the road's full
+  // width, sitting just OUTSIDE the intersection box on each approach.
+  //
+  //                        rx rx+1 rx+2 rx+3
+  //                        │   │    │    │
+  //          ry-1 →  . . . W W W W W . . .       (W = west crosswalk approach? no)
+  //          ry   →  ─ ─ ─ I I I I I ─ ─ ─       N approach above, S approach below
+  //          ry+1 →  ─ ─ ─ I I I I I ─ ─ ─
+  //          ry+2 →  ─ ─ ─ I I I I I ─ ─ ─
+  //          ry+3 →  ─ ─ ─ I I I I I ─ ─ ─
+  //          ry+4 →  . . . S S S S S . . .       (south approach crosswalk)
+  //
+  // We replace the road tile at (rx..rx+3, ry-1) and (rx..rx+3, ry+4) with
+  // a horizontally-striped crosswalk for N/S approach, and similarly the
+  // road tile at (rx-1, ry..ry+3) and (rx+4, ry..ry+3) for E/W approach.
+  // Crosswalk tiles still act as drivable road for car physics; the render
+  // layer paints zebra stripes oriented perpendicular to the road's flow.
   for (const ry of roadHorizontals) {
     for (const rx of roadVerticals) {
-      // crosswalk tile in 4 directions outside intersection
-      // We'll just mark special crosswalk type - render handles it
-      tiles[ry]?.[rx - 1] && (tiles[ry]![rx - 1]!.type !== "grass") &&
-        (tiles[ry]![rx - 1] = { type: "crosswalk" });
-      tiles[ry + 3]?.[rx + 4] && (tiles[ry + 3]![rx + 4]!.type !== "grass") &&
-        (tiles[ry + 3]![rx + 4] = { type: "crosswalk" });
+      const paint = (tx: number, ty: number, dir: "h" | "v") => {
+        const t = tiles[ty]?.[tx];
+        if (!t) return;
+        if (t.type !== "road" && t.type !== "intersection") return;
+        if (t.isBridge) return; // don't paint stripes on bridge decks
+        tiles[ty]![tx] = {
+          type: "crosswalk",
+          roadDir: dir,
+          district: t.district,
+        };
+      };
+      // North approach (above intersection — crossing the road that enters
+      // from the north). The road bands are 4 tiles wide, so the crosswalk
+      // covers the same 4 tiles.
+      for (let i = 0; i < 4; i++) paint(rx + i, ry - 1, "v");
+      // South approach
+      for (let i = 0; i < 4; i++) paint(rx + i, ry + 4, "v");
+      // West approach
+      for (let i = 0; i < 4; i++) paint(rx - 1, ry + i, "h");
+      // East approach
+      for (let i = 0; i < 4; i++) paint(rx + 4, ry + i, "h");
     }
   }
 
