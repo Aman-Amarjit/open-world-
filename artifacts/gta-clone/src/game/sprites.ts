@@ -11,9 +11,11 @@ export function drawCarShadow(
   ctx.save();
   ctx.translate(v.x + shadowOffsetX, v.y + shadowOffsetY);
   ctx.rotate(v.angle);
-  ctx.fillStyle = "rgba(0,0,0,0.4)";
+  // Soft contact shadow — slightly smaller than the car so it tucks under,
+  // and low-alpha so it doesn't read as a separate gray blob on dark asphalt.
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.beginPath();
-  ctx.ellipse(0, 0, v.length / 2 + 1, v.width / 2 + 1, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, v.length / 2 - 1, v.width / 2 - 1, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }
@@ -422,9 +424,9 @@ export function drawHumanShadow(
 ) {
   ctx.save();
   ctx.translate(h.x + shadowOffsetX, h.y + shadowOffsetY);
-  ctx.fillStyle = "rgba(0,0,0,0.45)";
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
   ctx.beginPath();
-  ctx.ellipse(0, 0, 4.5, 2.4, 0, 0, Math.PI * 2);
+  ctx.ellipse(0, 0, 3, 1.6, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
 }

@@ -1373,32 +1373,33 @@ function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
 function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
   const night = state.timeOfDay === "night";
   const snowing = state.weather === "snow";
-  // shadow
+  // shadow — kept subtle (low alpha) so it reads as a contact shadow, not a
+  // dark blob on the road / sidewalk.
   ctx.save();
-  ctx.fillStyle = night ? "rgba(0,0,0,0.25)" : "rgba(0,0,0,0.4)";
+  ctx.fillStyle = night ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.20)";
   if (p.kind === "tree" || p.kind === "oak") {
     ctx.beginPath();
-    ctx.ellipse(p.x + 4, p.y + 5, 14, 7, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 3, p.y + 4, 9, 4, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.kind === "pine") {
     ctx.beginPath();
-    ctx.ellipse(p.x + 3, p.y + 6, 10, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 2, p.y + 5, 7, 3, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.kind === "palm") {
     ctx.beginPath();
-    ctx.ellipse(p.x + 5, p.y + 6, 12, 4, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 4, p.y + 5, 8, 3, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.kind === "cactus") {
     ctx.beginPath();
-    ctx.ellipse(p.x + 2, p.y + 4, 5, 2, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 2, p.y + 4, 4, 1.5, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.kind === "lamp") {
     ctx.beginPath();
-    ctx.ellipse(p.x + 6, p.y + 4, 10, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 4, p.y + 3, 6, 2, 0, 0, Math.PI * 2);
     ctx.fill();
   } else if (p.kind !== "bush" && p.kind !== "flowers" && p.kind !== "tallgrass") {
     ctx.beginPath();
-    ctx.ellipse(p.x + 2, p.y + 3, 7, 3, 0, 0, Math.PI * 2);
+    ctx.ellipse(p.x + 2, p.y + 3, 4, 2, 0, 0, Math.PI * 2);
     ctx.fill();
   }
   ctx.restore();
@@ -1798,9 +1799,9 @@ function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
 function drawAnimalShadow(ctx: CanvasRenderingContext2D, a: Animal) {
   const flyOff = a.flyZ * 12;
   ctx.save();
-  ctx.fillStyle = "rgba(0,0,0,0.35)";
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
   ctx.beginPath();
-  const r = a.kind === "dog" ? 5 : a.kind === "cat" ? 4 : 3;
+  const r = a.kind === "dog" ? 4 : a.kind === "cat" ? 3 : 2.5;
   ctx.ellipse(a.x + flyOff * 0.4, a.y + flyOff * 0.4 + 2, r, r * 0.5, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
