@@ -8,7 +8,11 @@ import { audioEngine } from "./audio";
 
 // Combat tuning
 const PED_VIEW = 220;
-const PED_HEAR = 320;
+// PED_HEAR is the radius in which a pedestrian is "scared" by a gunshot.
+// Tightened from 320 → 200 (~3 tiles) so a single shot doesn't make every
+// pedestrian on the visible screen panic at once. Distant peds simply
+// don't hear it.
+const PED_HEAR = 200;
 const GUN_RANGE = 280;
 const COP_GUN_RANGE = 320;
 const SWERVE_DETECT = 70; // peds dodge cars within this distance heading at them
@@ -198,14 +202,14 @@ function updatePedestrian(
       if (o.kind !== "pedestrian") continue;
       if (o.aiState !== "panic" && o.aiState !== "flee") continue;
       const d2 = (o.x - h.x) ** 2 + (o.y - h.y) ** 2;
-      if (d2 > 55 * 55) continue;
+      if (d2 > 40 * 40) continue; // tighter contagion radius
       // Only spread when the original threat is still nearby — stops the
       // contagion from chaining infinitely.
       const srcD = Math.hypot(o.panicFromX - h.x, o.panicFromY - h.y);
       if (srcD > PED_HEAR) continue;
-      // Probabilistic per-second catch (~50%/s) instead of guaranteed every
-      // frame, so a single panicker doesn't instantly tip a whole crowd.
-      if (Math.random() > 0.5 * dt) continue;
+      // Probabilistic per-second catch (~25%/s, was 50%) so a single
+      // panicker is even less likely to tip a whole crowd.
+      if (Math.random() > 0.25 * dt) continue;
       threat = { x: o.panicFromX, y: o.panicFromY, pri: 0.7 };
       break;
     }
@@ -262,7 +266,9 @@ function updatePedestrian(
       h.aiState = "panic";
       h.panicFromX = threat.x;
       h.panicFromY = threat.y;
-      h.aiTimer = Math.max(h.aiTimer, 3);
+      // Shorter panic window (was 3s). They'll still flee but recover sooner
+      // so the screen isn't permanently plastered with `!` icons.
+      h.aiTimer = Math.max(h.aiTimer, 1.6);
     }
     if (h.aiTimer <= 0) {
       // Calm down

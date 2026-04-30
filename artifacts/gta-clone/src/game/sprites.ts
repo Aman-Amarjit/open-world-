@@ -803,21 +803,29 @@ export function drawHuman(ctx: CanvasRenderingContext2D, h: Human) {
   ctx.restore();
 
   // ----- World-space overlays (no rotation) -----
-  // Panic icon
-  if (h.aiState === "panic" || h.aiState === "flee") {
-    const blink = Math.floor(performance.now() / 250) % 2 === 0;
-    if (blink) {
-      ctx.save();
-      ctx.translate(h.x, h.y - 8);
-      ctx.fillStyle = "#ffe040";
-      ctx.strokeStyle = "#000";
-      ctx.lineWidth = 0.5;
-      ctx.font = "bold 7px sans-serif";
-      ctx.textAlign = "center";
-      ctx.strokeText("!", 0, 0);
-      ctx.fillText("!", 0, 0);
-      ctx.restore();
-    }
+  // Panic icon. Only show briefly when the ped JUST became scared (the last
+  // ~0.6s of their fresh panic window) — after that they're still fleeing
+  // but the icon hides so the screen isn't covered in exclamation marks.
+  // We also fade it instead of harsh blinking.
+  if (
+    (h.aiState === "panic" || h.aiState === "flee") &&
+    h.aiTimer > 1.0
+  ) {
+    // Fade in over 0.2s, then hold; goes 1.0 → 0.0 across the visible
+    // window. This makes the icon a quick "alert" pop, not a permanent tag.
+    const visT = Math.min(1, (h.aiTimer - 1.0) / 0.6); // 0..1
+    const alpha = visT;
+    ctx.save();
+    ctx.translate(h.x, h.y - 8);
+    ctx.globalAlpha = alpha;
+    ctx.fillStyle = "#ffe040";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 0.5;
+    ctx.font = "bold 7px sans-serif";
+    ctx.textAlign = "center";
+    ctx.strokeText("!", 0, 0);
+    ctx.fillText("!", 0, 0);
+    ctx.restore();
   }
   // Witness state - speech bubble with phone
   if (h.aiState === "witness") {
