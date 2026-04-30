@@ -2038,22 +2038,24 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
     for (const [ox, oy] of offsets) {
       const lx = node.x + ox;
       const ly = node.y + oy;
-      // Outer warm halo
-      const grd = ctx.createRadialGradient(lx, ly, 0, lx, ly, 90);
-      grd.addColorStop(0, `rgba(255,225,160,${0.70 * intensity * flicker})`);
-      grd.addColorStop(0.4, `rgba(255,205,130,${0.32 * intensity})`);
+      // Outer warm halo — radius reduced 90→62 and alpha cut significantly
+      // so multiple lamps don't additively blow out the road into a brown
+      // wash when several halos overlap (each intersection has 4).
+      const grd = ctx.createRadialGradient(lx, ly, 0, lx, ly, 62);
+      grd.addColorStop(0, `rgba(255,225,160,${0.34 * intensity * flicker})`);
+      grd.addColorStop(0.4, `rgba(255,205,130,${0.16 * intensity})`);
       grd.addColorStop(1, "rgba(255,200,140,0)");
       ctx.fillStyle = grd;
       ctx.beginPath();
-      ctx.arc(lx, ly, 90, 0, Math.PI * 2);
+      ctx.arc(lx, ly, 62, 0, Math.PI * 2);
       ctx.fill();
-      // Hot bulb core
-      const core = ctx.createRadialGradient(lx, ly, 0, lx, ly, 6);
-      core.addColorStop(0, `rgba(255,255,230,${0.95 * intensity})`);
+      // Hot bulb core — softened so it doesn't read as a tiny sun
+      const core = ctx.createRadialGradient(lx, ly, 0, lx, ly, 5);
+      core.addColorStop(0, `rgba(255,250,220,${0.55 * intensity})`);
       core.addColorStop(1, "rgba(255,240,180,0)");
       ctx.fillStyle = core;
       ctx.beginPath();
-      ctx.arc(lx, ly, 6, 0, Math.PI * 2);
+      ctx.arc(lx, ly, 5, 0, Math.PI * 2);
       ctx.fill();
     }
   }
@@ -2085,16 +2087,17 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
       if (((b.id + i) % 4) === 0 && slowFlicker < 0) continue;
       const wx = bx + 6 + r1 * (w - 12);
       const wy = by + 6 + r2 * (h - 12);
-      // Warm window halo
-      const grd = ctx.createRadialGradient(wx, wy, 0, wx, wy, 14);
-      grd.addColorStop(0, `rgba(255,220,150,${0.55 * intensity})`);
+      // Warm window halo — alpha cut so dozens of windows on tall buildings
+      // don't additively wash the whole street with orange (was 0.55).
+      const grd = ctx.createRadialGradient(wx, wy, 0, wx, wy, 11);
+      grd.addColorStop(0, `rgba(255,220,150,${0.30 * intensity})`);
       grd.addColorStop(1, "rgba(255,220,150,0)");
       ctx.fillStyle = grd;
       ctx.beginPath();
-      ctx.arc(wx, wy, 14, 0, Math.PI * 2);
+      ctx.arc(wx, wy, 11, 0, Math.PI * 2);
       ctx.fill();
-      // Bright pixel at the window itself
-      ctx.fillStyle = `rgba(255,235,180,${0.95 * intensity})`;
+      // Bright pixel at the window itself (kept fairly punchy, it's tiny)
+      ctx.fillStyle = `rgba(255,235,180,${0.7 * intensity})`;
       ctx.fillRect(wx - 0.7, wy - 0.7, 1.4, 1.4);
     }
   }
@@ -2118,15 +2121,17 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
         v.y + sinA * halfL - cosA * (halfWv - 3),
       ],
     ];
-    // Cone — wedge shape extending forward
+    // Cone — wedge extending forward. Alpha cut roughly in half (was
+    // 0.55→0.22) and the cone tapers to a tighter spread (32 vs 36) so two
+    // overlapping cones no longer additively blow out into solid white.
     ctx.save();
     ctx.translate(v.x + cosA * halfL, v.y + sinA * halfL);
     ctx.rotate(v.angle);
-    const coneLen = 90 + Math.min(60, Math.hypot(v.vx, v.vy) * 0.5);
-    const coneWidth = 36;
+    const coneLen = 78 + Math.min(50, Math.hypot(v.vx, v.vy) * 0.45);
+    const coneWidth = 32;
     const cgrd = ctx.createLinearGradient(0, 0, coneLen, 0);
-    cgrd.addColorStop(0, `rgba(255,250,210,${0.55 * intensity})`);
-    cgrd.addColorStop(0.5, `rgba(255,245,200,${0.22 * intensity})`);
+    cgrd.addColorStop(0, `rgba(255,248,210,${0.28 * intensity})`);
+    cgrd.addColorStop(0.5, `rgba(255,243,200,${0.11 * intensity})`);
     cgrd.addColorStop(1, "rgba(255,245,200,0)");
     ctx.fillStyle = cgrd;
     ctx.beginPath();
@@ -2137,21 +2142,24 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-    // Bright bulb cores at each headlight
+    // Bright bulb cores at each headlight — also softened (0.95 → 0.55)
+    // and slightly smaller so the bulb reads as a glow not a flash.
     for (const [lx, ly] of lights) {
-      const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, 6);
-      g.addColorStop(0, `rgba(255,255,235,${0.95 * intensity})`);
+      const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, 5);
+      g.addColorStop(0, `rgba(255,250,225,${0.55 * intensity})`);
       g.addColorStop(1, "rgba(255,250,210,0)");
       ctx.fillStyle = g;
       ctx.beginPath();
-      ctx.arc(lx, ly, 6, 0, Math.PI * 2);
+      ctx.arc(lx, ly, 5, 0, Math.PI * 2);
       ctx.fill();
     }
     // Tail glow (always on at night) — red halo behind
     const tx = v.x - cosA * halfL;
     const ty = v.y - sinA * halfL;
-    const tailIntensity = v.brake > 0.3 ? 0.85 : 0.45;
-    const tg = ctx.createRadialGradient(tx, ty, 0, tx, ty, 14);
+    // Brake-on punches red brighter, but normal running tail is much softer
+    // (was 0.45, now 0.30) so a calm parked car doesn't glow like a flare.
+    const tailIntensity = v.brake > 0.3 ? 0.65 : 0.30;
+    const tg = ctx.createRadialGradient(tx, ty, 0, tx, ty, 12);
     tg.addColorStop(0, `rgba(255,60,40,${tailIntensity * intensity})`);
     tg.addColorStop(1, "rgba(255,40,20,0)");
     ctx.fillStyle = tg;
