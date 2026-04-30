@@ -151,9 +151,18 @@ export function renderWorld(rc: RenderContext) {
             }
             ctx.stroke();
           }
-          // Lane markings — WHITE dashes (GTA1 style, was yellow)
+          // Lane markings — pure white dashes. Skip the time-of-day filter
+          // because real road paint is reflective and reads as bright white
+          // at night under headlights; without this they go beige and look
+          // like old yellow paint.
+          const laneColor =
+            state.timeOfDay === "night"
+              ? "#e8e8e0"
+              : state.timeOfDay === "dusk"
+                ? "#ece9dc"
+                : "#f0eee4";
           if (t.type === "road" && t.roadDir === "h") {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#f0eee4");
+            ctx.strokeStyle = laneColor;
             ctx.lineWidth = 1.5;
             ctx.setLineDash([12, 8]);
             const rowInBlock = y % 10;
@@ -165,7 +174,7 @@ export function renderWorld(rc: RenderContext) {
             }
             ctx.setLineDash([]);
           } else if (t.type === "road" && t.roadDir === "v") {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#f0eee4");
+            ctx.strokeStyle = laneColor;
             ctx.lineWidth = 1.5;
             ctx.setLineDash([12, 8]);
             const colInBlock = x % 10;
@@ -184,7 +193,13 @@ export function renderWorld(rc: RenderContext) {
           //    fake wear shading — looks crisp at all zoom levels. ──
           ctx.fillStyle = timeFilter(state.timeOfDay, "#4a4d52");
           ctx.fillRect(px, py, TILE, TILE);
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#f0eee4");
+          // Stripes use the un-darkened paint color (reflective at night)
+          ctx.fillStyle =
+            state.timeOfDay === "night"
+              ? "#e8e8e0"
+              : state.timeOfDay === "dusk"
+                ? "#ece9dc"
+                : "#f0eee4";
           if (t.roadDir === "v") {
             // Horizontal stripes (cars going N/S)
             for (let i = 0; i < 6; i++) {
