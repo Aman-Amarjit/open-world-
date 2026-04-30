@@ -50,28 +50,76 @@ export function renderWorld(rc: RenderContext) {
       const t = world.tiles[y]![x]!;
       const px = x * TILE;
       const py = y * TILE;
+      // Per-tile deterministic hash → stable RNG without flicker. Cheap
+      // bit-mixed function (no allocation), then we just `% N` it for picks.
+      const seed = (x * 73856093) ^ (y * 19349663);
+      const h1 = (seed * 2654435761) >>> 0;
+      const h2 = ((seed ^ 0xa5a5a5a5) * 1597334677) >>> 0;
+      const h3 = ((seed + 0x9e3779b9) * 0x85ebca6b) >>> 0;
       switch (t.type) {
         case "grass": {
-          const base =
-            t.variant! >= 4 ? timeFilter(state.timeOfDay, "#5a8a3a") : timeFilter(state.timeOfDay, "#4a7a3f");
+          // ── Mottled lawn with clusters of blades, occasional flowers/dirt ──
+          const lush = t.variant! >= 4;
+          const base = timeFilter(state.timeOfDay, lush ? "#5a8a3a" : "#4a7a3f");
+          const dark = shadeHex(base, -10);
+          const lite = shadeHex(base, 14);
           ctx.fillStyle = base;
           ctx.fillRect(px, py, TILE, TILE);
-          // small grass texture detail
-          ctx.fillStyle = shadeHex(base, 12);
-          for (let i = 0; i < 5; i++) {
-            const gx = px + ((x * 17 + i * 13) % TILE);
-            const gy = py + ((y * 19 + i * 11) % TILE);
-            ctx.fillRect(gx, gy, 2, 1);
+          // 2 darker mottle patches (varied position per tile)
+          ctx.fillStyle = dark;
+          ctx.beginPath();
+          ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 8 + (h3 % 6), 5 + (h1 % 4), 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.beginPath();
+          ctx.ellipse(px + (h2 % TILE), py + (h3 % TILE), 6 + (h1 % 5), 4 + (h2 % 3), 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Grass blade clusters (groups of 3 short upright lines)
+          ctx.strokeStyle = lite;
+          ctx.lineWidth = 0.7;
+          for (let cluster = 0; cluster < 4; cluster++) {
+            const cx = px + ((h1 >> (cluster * 4)) % TILE);
+            const cy = py + ((h2 >> (cluster * 3)) % TILE);
+            ctx.beginPath();
+            for (let bi = 0; bi < 3; bi++) {
+              ctx.moveTo(cx + bi * 1.5, cy + 2);
+              ctx.lineTo(cx + bi * 1.5 - 0.3, cy - 1);
+            }
+            ctx.stroke();
+          }
+          // Occasional yellow flower or dirt scuff
+          if ((h3 & 0xf) === 0) {
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#fff2a0");
+            ctx.beginPath();
+            ctx.arc(px + (h1 % (TILE - 6)) + 3, py + (h2 % (TILE - 6)) + 3, 1.4, 0, Math.PI * 2);
+            ctx.fill();
+          } else if ((h3 & 0xf) === 1) {
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#7a6248");
+            ctx.beginPath();
+            ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 5, 3, 0, 0, Math.PI * 2);
+            ctx.fill();
           }
           break;
         }
         case "sidewalk": {
-          // Two-tone concrete with subtle speckle and 4-tile slabs.
+          // ── Four-up concrete slabs with per-slab tone variation, recessed
+          //    grooves (shadow + highlight), worn corners, occasional stains ──
           const baseSw = timeFilter(state.timeOfDay, "#9a8f80");
-          ctx.fillStyle = baseSw;
-          ctx.fillRect(px, py, TILE, TILE);
-          // Slab dividers (thicker)
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#6f6555");
+          // Per-slab variation: each of the 4 quadrants gets a slight tone shift
+          for (let qy = 0; qy < 2; qy++) {
+            for (let qx = 0; qx < 2; qx++) {
+              const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
+              const tone = ((qHash % 11) - 5); // -5..+5 brightness
+              ctx.fillStyle = shadeHex(baseSw, tone);
+              ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
+            }
+          }
+          // Subtle large-scale mottle (weathering wash)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(80,70,60,0.06)");
+          ctx.beginPath();
+          ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 18, 12, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Recessed expansion joints — dark line + 1px highlight on south side
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#5e5446");
           ctx.lineWidth = 1.2;
           ctx.beginPath();
           ctx.moveTo(px, py + TILE / 2);
@@ -79,61 +127,104 @@ export function renderWorld(rc: RenderContext) {
           ctx.moveTo(px + TILE / 2, py);
           ctx.lineTo(px + TILE / 2, py + TILE);
           ctx.stroke();
-          // Inner expansion grooves
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#867a6a");
-          ctx.lineWidth = 0.4;
-          ctx.beginPath();
-          ctx.moveTo(px + TILE / 4, py);
-          ctx.lineTo(px + TILE / 4, py + TILE);
-          ctx.moveTo(px + (3 * TILE) / 4, py);
-          ctx.lineTo(px + (3 * TILE) / 4, py + TILE);
-          ctx.moveTo(px, py + TILE / 4);
-          ctx.lineTo(px + TILE, py + TILE / 4);
-          ctx.moveTo(px, py + (3 * TILE) / 4);
-          ctx.lineTo(px + TILE, py + (3 * TILE) / 4);
-          ctx.stroke();
-          // Speckle noise
+          // Highlight just south of the horizontal joint (suggests recess)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(255,245,225,0.18)");
+          ctx.fillRect(px, py + TILE / 2 + 1.2, TILE, 0.7);
+          ctx.fillRect(px + TILE / 2 + 1.2, py, 0.7, TILE);
+          // Worn corner chamfers at slab intersections
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#7a6f5e");
+          ctx.fillRect(px + TILE / 2 - 1, py + TILE / 2 - 1, 3, 3);
+          // Aggregate speckle (concrete grain) — varied sizes
           ctx.fillStyle = timeFilter(state.timeOfDay, "#7a6f60");
-          for (let i = 0; i < 6; i++) {
-            const sx = px + ((x * 13 + i * 23) % TILE);
-            const sy = py + ((y * 19 + i * 17) % TILE);
+          for (let i = 0; i < 5; i++) {
+            const sx = px + ((h1 >> (i * 2)) % TILE);
+            const sy = py + ((h2 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
           }
           ctx.fillStyle = timeFilter(state.timeOfDay, "#b8ad9a");
           for (let i = 0; i < 4; i++) {
-            const sx = px + ((x * 29 + i * 31) % TILE);
-            const sy = py + ((y * 23 + i * 11) % TILE);
+            const sx = px + ((h2 >> (i * 2)) % TILE);
+            const sy = py + ((h3 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Occasional darker stain (oil drip, gum, etc.)
+          if ((h3 & 0x1f) === 0) {
+            ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(40,30,25,0.35)");
+            ctx.beginPath();
+            ctx.ellipse(px + (h1 % (TILE - 8)) + 4, py + (h2 % (TILE - 8)) + 4, 3, 2, h3 % 3, 0, Math.PI * 2);
+            ctx.fill();
           }
           break;
         }
         case "road":
         case "intersection": {
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#3a3a3a");
+          // ── Layered asphalt: dark base + mottled mid-tone + aggregate
+          //    pebbles + occasional patches/oil stains/cracks ──
+          const asphalt = timeFilter(state.timeOfDay, "#383838");
+          ctx.fillStyle = asphalt;
           ctx.fillRect(px, py, TILE, TILE);
-          // Asphalt grain — light/dark specks
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#4a4a4a");
-          for (let i = 0; i < 7; i++) {
-            const sx = px + ((x * 19 + i * 23) % TILE);
-            const sy = py + ((y * 13 + i * 31) % TILE);
+          // Large mottle blob — uneven asphalt look (subtle)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(70,70,70,0.22)");
+          ctx.beginPath();
+          ctx.ellipse(px + (h1 % TILE), py + (h2 % TILE), 16, 11, 0, 0, Math.PI * 2);
+          ctx.fill();
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.18)");
+          ctx.beginPath();
+          ctx.ellipse(px + (h2 % TILE), py + (h3 % TILE), 12, 8, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Aggregate pebbles (lighter chips of stone in asphalt) — varied tones
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#5a5a5a");
+          for (let i = 0; i < 8; i++) {
+            const sx = px + ((h1 >> (i * 2)) % TILE);
+            const sy = py + ((h2 >> (i * 3)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
           }
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#2a2a2a");
-          for (let i = 0; i < 5; i++) {
-            const sx = px + ((x * 29 + i * 41) % TILE);
-            const sy = py + ((y * 23 + i * 17) % TILE);
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#6a6a68");
+          for (let i = 0; i < 4; i++) {
+            const sx = px + ((h3 >> (i * 2)) % TILE);
+            const sy = py + ((h1 >> (i * 4)) % TILE);
+            ctx.fillRect(sx, sy, 1.5, 1.5);
+          }
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#252525");
+          for (let i = 0; i < 6; i++) {
+            const sx = px + ((h2 >> (i * 3)) % TILE);
+            const sy = py + ((h3 >> (i * 2)) % TILE);
             ctx.fillRect(sx, sy, 1, 1);
           }
-          // Occasional crack
-          if (((x * 7 + y * 13) % 17) === 0) {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1f1f1f");
+          // Occasional repair patch — slightly lighter rectangle outlined dark
+          if ((h3 & 0x3f) === 0) {
+            const pw = 14 + (h1 % 14);
+            const ph = 10 + (h2 % 10);
+            const ppx = px + (h1 % (TILE - pw));
+            const ppy = py + (h2 % (TILE - ph));
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#444");
+            ctx.fillRect(ppx, ppy, pw, ph);
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1a1a1a");
+            ctx.lineWidth = 0.5;
+            ctx.strokeRect(ppx + 0.25, ppy + 0.25, pw - 0.5, ph - 0.5);
+          }
+          // Occasional oil stain (subtle dark blob)
+          if ((h2 & 0x3f) === 7) {
+            ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(15,12,8,0.45)");
+            ctx.beginPath();
+            ctx.ellipse(px + (h1 % (TILE - 12)) + 6, py + (h3 % (TILE - 8)) + 4, 5, 3, h3 % 3, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // Occasional branching crack (more natural than the old straight crack)
+          if (((x * 7 + y * 13) % 19) === 0) {
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1a1a1a");
             ctx.lineWidth = 0.5;
             ctx.beginPath();
-            const cx = px + ((x * 11) % (TILE - 16)) + 8;
-            const cy = py + ((y * 7) % (TILE - 16)) + 8;
+            const cx = px + ((x * 11) % (TILE - 20)) + 10;
+            const cy = py + ((y * 7) % (TILE - 20)) + 10;
             ctx.moveTo(cx, cy);
-            ctx.lineTo(cx + 8, cy + 4);
-            ctx.lineTo(cx + 12, cy - 2);
+            ctx.lineTo(cx + 6, cy + 3);
+            ctx.lineTo(cx + 11, cy - 2);
+            ctx.lineTo(cx + 14, cy + 4);
+            // Branch
+            ctx.moveTo(cx + 6, cy + 3);
+            ctx.lineTo(cx + 8, cy + 7);
+            ctx.lineTo(cx + 12, cy + 9);
             ctx.stroke();
           }
           // Tire skid (rare)
@@ -154,12 +245,11 @@ export function renderWorld(rc: RenderContext) {
             }
             ctx.stroke();
           }
-          // Lane markings
+          // Lane markings — solid amber center, with edge-fade for worn look
           if (t.type === "road" && t.roadDir === "h") {
             ctx.strokeStyle = timeFilter(state.timeOfDay, "#e8c84a");
             ctx.lineWidth = 1.5;
             ctx.setLineDash([12, 8]);
-            // Center line of the 4-tile road. Only draw on the 2nd row.
             const rowInBlock = y % 10;
             if (rowInBlock === 5 || rowInBlock === 1) {
               ctx.beginPath();
@@ -184,27 +274,36 @@ export function renderWorld(rc: RenderContext) {
           break;
         }
         case "crosswalk": {
-          // Asphalt base
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#3a3a3a");
+          // ── Worn zebra crossing: stripes have slightly varied brightness
+          //    (some more weathered) and dark edge fade for a painted-on look ──
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#383838");
           ctx.fillRect(px, py, TILE, TILE);
-          // Stripe orientation: a crosswalk on a vertical road (cars going N/S)
-          // shows HORIZONTAL stripes; a crosswalk on a horizontal road shows
-          // VERTICAL stripes. Stripes are perpendicular to the flow of cars.
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#f0f0f0");
+          // Asphalt mottle under stripes
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(70,70,70,0.18)");
+          ctx.beginPath();
+          ctx.ellipse(px + TILE / 2, py + TILE / 2, 18, 12, 0, 0, Math.PI * 2);
+          ctx.fill();
+          // Stripes — vary alpha per stripe for "worn" look
           if (t.roadDir === "v") {
-            // Cars go N/S → stripes are horizontal
+            // Horizontal stripes
             for (let i = 0; i < 6; i++) {
+              const wear = 0.78 + (((h1 >> (i * 3)) & 0xf) / 0xf) * 0.22; // 0.78..1.0
+              ctx.fillStyle = timeFilter(state.timeOfDay, `rgba(245,245,238,${wear})`);
               ctx.fillRect(px + 4, py + 4 + i * 10, TILE - 8, 6);
+              // Subtle dark edge on south side of each stripe (depth)
+              ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.25)");
+              ctx.fillRect(px + 4, py + 4 + i * 10 + 6, TILE - 8, 0.5);
             }
           } else {
-            // Cars go E/W (or unspecified) → stripes are vertical
+            // Vertical stripes
             for (let i = 0; i < 6; i++) {
+              const wear = 0.78 + (((h1 >> (i * 3)) & 0xf) / 0xf) * 0.22;
+              ctx.fillStyle = timeFilter(state.timeOfDay, `rgba(245,245,238,${wear})`);
               ctx.fillRect(px + 4 + i * 10, py + 4, 6, TILE - 8);
+              ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.25)");
+              ctx.fillRect(px + 4 + i * 10 + 6, py + 4, 0.5, TILE - 8);
             }
           }
-          // Stop line (a thin solid white bar) on the side of the crosswalk
-          // closer to the intersection, so cars can visually "stop at the line".
-          // (Skipped here — stop line is implicit via the AI's stop distance.)
           break;
         }
         case "building": {
@@ -214,57 +313,143 @@ export function renderWorld(rc: RenderContext) {
           break;
         }
         case "water": {
-          // Deeper blue with subtle wave pattern that animates
-          const t = performance.now() / 1000;
+          // ── Deeper-water look with two layers of waves and subtle caustics ──
+          const tt = performance.now() / 1000;
           const base = timeFilter(state.timeOfDay, "#1f3d6a");
-          ctx.fillStyle = base;
+          const deep = timeFilter(state.timeOfDay, "#163058");
+          // Vertical depth gradient (top slightly lighter from sky reflection)
+          const wg = ctx.createLinearGradient(px, py, px, py + TILE);
+          wg.addColorStop(0, shadeHex(base, 8));
+          wg.addColorStop(1, deep);
+          ctx.fillStyle = wg;
           ctx.fillRect(px, py, TILE, TILE);
-          // wave lines
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(180,220,255,0.18)");
+          // Long lazy wave lines (back layer, lower opacity)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(150,200,240,0.10)");
+          ctx.lineWidth = 1.4;
+          ctx.beginPath();
+          for (let i = 0; i < 2; i++) {
+            const offY = py + 16 + i * 28 + Math.sin(tt * 0.6 + (x + y) * 0.3 + i) * 2.5;
+            ctx.moveTo(px, offY);
+            ctx.bezierCurveTo(px + 16, offY - 3, px + 32, offY + 3, px + 48, offY - 1);
+            ctx.lineTo(px + TILE, offY);
+          }
+          ctx.stroke();
+          // Bright crisp ripples (front layer)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(200,225,250,0.22)");
           ctx.lineWidth = 1;
           ctx.beginPath();
           for (let i = 0; i < 3; i++) {
-            const offY = py + 12 + i * 18 + Math.sin(t + (x + y) * 0.4 + i) * 2;
+            const offY = py + 12 + i * 18 + Math.sin(tt + (x + y) * 0.4 + i) * 2;
             ctx.moveTo(px, offY);
             ctx.bezierCurveTo(px + 16, offY - 2, px + 32, offY + 2, px + 48, offY - 1);
             ctx.lineTo(px + TILE, offY);
           }
           ctx.stroke();
-          // sparkle dots
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(220,240,255,0.35)");
-          for (let i = 0; i < 2; i++) {
-            const sx = px + ((x * 23 + i * 17 + Math.floor(t * 8)) % TILE);
-            const sy = py + ((y * 19 + i * 11) % TILE);
+          // Sparkles (sun glints — animated drift)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(220,240,255,0.45)");
+          for (let i = 0; i < 3; i++) {
+            const sx = px + ((x * 23 + i * 17 + Math.floor(tt * 8)) % TILE);
+            const sy = py + ((y * 19 + i * 11 + Math.floor(tt * 3)) % TILE);
             ctx.fillRect(sx, sy, 1.5, 1.5);
           }
           break;
         }
         case "sand": {
+          // ── Beach sand: gradient base + ripple lines + mixed pebbles + shells ──
           const sandBase = timeFilter(state.timeOfDay, "#e8d49a");
-          ctx.fillStyle = sandBase;
+          // Subtle gradient (varied across map for non-flat look)
+          const sg = ctx.createLinearGradient(px, py, px + TILE, py + TILE);
+          sg.addColorStop(0, shadeHex(sandBase, 4));
+          sg.addColorStop(1, shadeHex(sandBase, -6));
+          ctx.fillStyle = sg;
           ctx.fillRect(px, py, TILE, TILE);
-          // pebble specks
+          // Ripple lines (gentle waves of darker sand)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(170,140,90,0.25)");
+          ctx.lineWidth = 0.8;
+          ctx.beginPath();
+          for (let i = 0; i < 2; i++) {
+            const ry = py + 16 + i * 26 + ((h1 >> (i * 3)) & 0x7);
+            ctx.moveTo(px, ry);
+            ctx.quadraticCurveTo(px + TILE / 2, ry + 3, px + TILE, ry);
+          }
+          ctx.stroke();
+          // Granular dots (many small)
           ctx.fillStyle = timeFilter(state.timeOfDay, "#c8a868");
-          for (let i = 0; i < 6; i++) {
-            const sx = px + ((x * 13 + i * 23) % TILE);
-            const sy = py + ((y * 17 + i * 19) % TILE);
-            ctx.fillRect(sx, sy, 1.5, 1.5);
+          for (let i = 0; i < 7; i++) {
+            const sx = px + ((h1 >> (i * 2)) % TILE);
+            const sy = py + ((h2 >> (i * 3)) % TILE);
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Lighter highlights
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#f0e0b0");
+          for (let i = 0; i < 4; i++) {
+            const sx = px + ((h2 >> (i * 2)) % TILE);
+            const sy = py + ((h3 >> (i * 3)) % TILE);
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Occasional shell or pebble
+          if ((h3 & 0x1f) === 0) {
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#fff5e0");
+            ctx.beginPath();
+            ctx.ellipse(
+              px + (h1 % (TILE - 6)) + 3,
+              py + (h2 % (TILE - 6)) + 3,
+              2.5,
+              1.5,
+              (h3 % 4) * 0.5,
+              0,
+              Math.PI * 2,
+            );
+            ctx.fill();
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(140,110,80,0.6)");
+            ctx.lineWidth = 0.4;
+            ctx.stroke();
           }
           break;
         }
         case "plaza": {
-          // Stone plaza tile (lighter, larger pattern)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#b8b0a0");
-          ctx.fillRect(px, py, TILE, TILE);
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#8a8275");
-          ctx.lineWidth = 1;
-          ctx.strokeRect(px + 1, py + 1, TILE - 2, TILE - 2);
+          // ── Cut stone plaza: 4 quadrants of varied stone tone, recessed
+          //    grout joints (dark + highlight), occasional decorative tile ──
+          const baseSt = timeFilter(state.timeOfDay, "#b8b0a0");
+          for (let qy = 0; qy < 2; qy++) {
+            for (let qx = 0; qx < 2; qx++) {
+              const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
+              const tone = ((qHash % 13) - 6); // -6..+6
+              ctx.fillStyle = shadeHex(baseSt, tone);
+              ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
+              // Faint noise per slab for stone texture
+              ctx.fillStyle = shadeHex(baseSt, tone - 12);
+              for (let i = 0; i < 3; i++) {
+                const ssx = px + qx * (TILE / 2) + ((qHash >> i) % (TILE / 2));
+                const ssy = py + qy * (TILE / 2) + ((qHash >> (i + 2)) % (TILE / 2));
+                ctx.fillRect(ssx, ssy, 1, 1);
+              }
+            }
+          }
+          // Recessed grout: dark joint + bottom-right highlight
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#5e574a");
+          ctx.lineWidth = 1.2;
           ctx.beginPath();
           ctx.moveTo(px + TILE / 2, py);
           ctx.lineTo(px + TILE / 2, py + TILE);
           ctx.moveTo(px, py + TILE / 2);
           ctx.lineTo(px + TILE, py + TILE / 2);
           ctx.stroke();
+          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(255,250,235,0.18)");
+          ctx.fillRect(px + TILE / 2 + 1.2, py, 0.7, TILE);
+          ctx.fillRect(px, py + TILE / 2 + 1.2, TILE, 0.7);
+          // Outer slab edge
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#8a8275");
+          ctx.lineWidth = 0.8;
+          ctx.strokeRect(px + 0.4, py + 0.4, TILE - 0.8, TILE - 0.8);
+          // Occasional accent tile (darker stone)
+          if ((h3 & 0xf) === 0) {
+            const aq = (h2 % 4); // which quadrant
+            const aqx = aq % 2;
+            const aqy = (aq >> 1) & 1;
+            ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(60,55,45,0.35)");
+            ctx.fillRect(px + aqx * (TILE / 2) + 4, py + aqy * (TILE / 2) + 4, TILE / 2 - 8, TILE / 2 - 8);
+          }
           break;
         }
       }
