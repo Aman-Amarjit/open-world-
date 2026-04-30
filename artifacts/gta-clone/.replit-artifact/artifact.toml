@@ -1,0 +1,31 @@
+kind = "web"
+previewPath = "/"
+title = "South Island City"
+version = "1.0.0"
+id = "artifacts/gta-clone"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21056
+
+[services.development]
+run = "pnpm --filter @workspace/gta-clone run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gta-clone", "run", "build" ]
+publicDir = "artifacts/gta-clone/dist/public"
+serve = "static"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21056"
+BASE_PATH = "/"

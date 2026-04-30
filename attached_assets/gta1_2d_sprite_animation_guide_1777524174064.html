@@ -1,0 +1,682 @@
+
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+canvas{display:block;image-rendering:pixelated}
+.wrap{padding:1rem 0}
+.row{display:flex;gap:16px;flex-wrap:wrap;margin-bottom:20px;align-items:flex-start}
+.panel{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:12px;padding:14px;flex:1;min-width:200px}
+.panel h3{font-size:13px;font-weight:500;color:var(--color-text-primary);margin-bottom:8px}
+.panel p{font-size:12px;color:var(--color-text-secondary);line-height:1.6}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px}
+.tab{padding:6px 12px;font-size:12px;border:0.5px solid var(--color-border-secondary);border-radius:8px;cursor:pointer;background:transparent;color:var(--color-text-secondary);transition:all .15s}
+.tab.active{background:var(--color-background-secondary);color:var(--color-text-primary);font-weight:500;border-color:var(--color-border-primary)}
+.section{display:none}.section.active{display:block}
+.canrow{display:flex;gap:12px;flex-wrap:wrap;align-items:flex-start;margin-bottom:16px}
+.canwrap{display:flex;flex-direction:column;align-items:center;gap:6px}
+.canlabel{font-size:11px;color:var(--color-text-secondary);text-align:center}
+.anim-controls{display:flex;gap:8px;align-items:center;margin-bottom:12px;flex-wrap:wrap}
+.anim-controls button{font-size:12px;padding:5px 12px;cursor:pointer}
+.badge{display:inline-block;font-size:10px;padding:2px 7px;border-radius:99px;font-weight:500;margin:2px}
+.badge-b{background:#E6F1FB;color:#0C447C}
+.badge-g{background:#EAF3DE;color:#27500A}
+.badge-r{background:#FCEBEB;color:#791F1F}
+.badge-a{background:#FAEEDA;color:#633806}
+.badge-gr{background:#F1EFE8;color:#444441;border:0.5px solid #D3D1C7}
+.code{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:8px;padding:10px;font-family:var(--font-mono);font-size:11px;line-height:1.7;color:var(--color-text-primary);overflow-x:auto;white-space:pre;margin-bottom:10px}
+.kw{color:#185FA5}.cm{color:#888780}.st{color:#3B6D11}
+</style>
+
+<div class="wrap">
+<div style="font-size:17px;font-weight:500;color:var(--color-text-primary);margin-bottom:4px">2D sprite art — GTA 1 style</div>
+<div style="font-size:12px;color:var(--color-text-secondary);margin-bottom:16px">All drawn with Canvas 2D paths — no shapes, no 3D models, no clip art. Every sprite is pure bezier/lineTo art.</div>
+
+<div class="tabs">
+  <button class="tab active" onclick="sw('cars')">Cars</button>
+  <button class="tab" onclick="sw('humans')">Humans</button>
+  <button class="tab" onclick="sw('police')">Police</button>
+  <button class="tab" onclick="sw('animations')">Animations</button>
+  <button class="tab" onclick="sw('environment')">Environment</button>
+  <button class="tab" onclick="sw('code')">Sprite code</button>
+</div>
+
+<!-- CARS -->
+<div id="sec-cars" class="section active">
+  <div class="canrow" id="car-canvases"></div>
+  <div class="row">
+    <div class="panel">
+      <h3>Top-down car anatomy</h3>
+      <p>Each car is drawn as layered Canvas paths: <strong>body silhouette</strong> (outer hull with subtle asymmetry), <strong>windshield</strong> (translucent tinted fill), <strong>roof panel</strong> (darker fill, slightly smaller), <strong>wheel arches</strong> (4 subtle indentations), <strong>wheels</strong> (dark ellipses at 4 corners), <strong>headlights</strong> (small bright ellipses front), <strong>taillights</strong> (red ellipses rear), <strong>side detail lines</strong> (1px strokes for door seams).</p>
+    </div>
+    <div class="panel">
+      <h3>Rotation system</h3>
+      <p>Draw each car sprite at 0° (facing right). Rotate with <code>ctx.rotate(angle)</code>. For pixel-art feel, pre-render 16 or 32 rotation frames into offscreen canvases and pick the nearest frame at runtime — avoids sub-pixel blur. Use <code>Math.round(angle/(Math.PI*2)*16)*frame_step</code> to snap to nearest frame.</p>
+    </div>
+    <div class="panel">
+      <h3>Damage states</h3>
+      <p>Draw 3 overlapping damage layers: <strong>undamaged</strong> (clean body), <strong>damaged</strong> (dented path variants, cracked windshield lines, dark smoke patch), <strong>on fire</strong> (flickering orange alpha overlay, animated). Toggle by drawing additional paths on top, no new assets needed.</p>
+    </div>
+  </div>
+</div>
+
+<!-- HUMANS -->
+<div id="sec-humans" class="section">
+  <div class="canrow" id="human-canvases"></div>
+  <div class="row">
+    <div class="panel">
+      <h3>Human sprite layers</h3>
+      <p>Top-down human: <strong>shadow ellipse</strong> (semi-transparent, 1px below sprite), <strong>legs/feet</strong> (two small rounded teardrop paths), <strong>torso</strong> (tapered oval), <strong>arms</strong> (thin curved paths, one slightly raised), <strong>head</strong> (slightly asymmetric ellipse — not a perfect circle), <strong>hair</strong> (organic blob path on top of head).</p>
+    </div>
+    <div class="panel">
+      <h3>Walk animation</h3>
+      <p>8-frame walk cycle. Key frames: neutral stance → left leg fwd/right back → neutral → right leg fwd/left back. Arms swing opposite to legs. Animate leg offsets with <code>sin(t)</code>. Head bobs very slightly (+1px). At 12fps feels smooth. Draw each frame into offscreen canvas, cycle by frame index.</p>
+    </div>
+    <div class="panel">
+      <h3>Character variants</h3>
+      <p>Same base path, different fill colors and details: <span class="badge badge-b">Player</span> unique jacket color, gun hand. <span class="badge badge-r">Gang</span> darker clothes. <span class="badge badge-b">Police</span> blue uniform, cap. <span class="badge badge-gr">Pedestrian</span> varied shirt/trouser combos. <span class="badge badge-a">SWAT</span> tactical vest outline, helmet.</p>
+    </div>
+  </div>
+</div>
+
+<!-- POLICE -->
+<div id="sec-police" class="section">
+  <div class="canrow" id="police-canvases"></div>
+  <div class="row">
+    <div class="panel">
+      <h3>Police cruiser markings</h3>
+      <p>Same car body path as sedan, with: white/black two-tone body fill (split with a diagonal path), roof lightbar (narrow rect with alternating red/blue fills, flashes via JS setInterval), "POLICE" text rendered at tiny scale, side door stripe (thin diagonal path), push-bar at front (2 extra line segments).</p>
+    </div>
+    <div class="panel">
+      <h3>Siren light animation</h3>
+      <p>Lightbar flashes red then blue alternately at 200ms interval. Draw two small ellipses on roof. Toggle fillStyle between <code>#E24B4A</code> and <code>#378ADD</code>. Add a faint colored halo with a slightly larger semi-transparent ellipse underneath. All Canvas 2D, no CSS effects.</p>
+    </div>
+    <div class="panel">
+      <h3>SWAT / helicopter</h3>
+      <p>SWAT van: wider body path, roof hatch detail, black trim. Helicopter (top-down): main rotor = 2 thin elongated ellipses crossing at center, animated rotation. Fuselage = flattened teardrop path. Skids = 2 thin line segments. Tail rotor = small X. Shadow below rotates at same speed.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ANIMATIONS -->
+<div id="sec-animations" class="section">
+  <div style="margin-bottom:12px">
+    <div class="anim-controls">
+      <button onclick="toggleAnim()">Pause / play</button>
+      <span style="font-size:12px;color:var(--color-text-secondary)">FPS:</span>
+      <input type="range" min="4" max="24" value="12" id="fps-slider" style="width:100px" oninput="setFPS(+this.value)">
+      <span id="fps-val" style="font-size:12px;color:var(--color-text-primary)">12</span>
+    </div>
+    <canvas id="anim-canvas" width="680" height="220" style="width:100%;border-radius:8px;border:0.5px solid var(--color-border-tertiary)"></canvas>
+  </div>
+  <div class="row">
+    <div class="panel">
+      <h3>Explosion animation</h3>
+      <p>12-frame explosion. Frames 1-3: bright white-yellow core flash. Frames 4-8: expanding orange fireball (bezier circle with jagged outer path for spikes). Frames 9-12: dark smoke clouds (grey organic blobs drifting up, fading alpha). All drawn procedurally — no sprites needed.</p>
+    </div>
+    <div class="panel">
+      <h3>Gunfire / muzzle flash</h3>
+      <p>3-frame flash at gun barrel. Frame 1: bright yellow-white star shape (6 triangular spikes path). Frame 2: smaller orange core. Frame 3: gone. Show at exactly gun barrel world position. Bullet: fast-moving 2px wide line segment, drawn and erased each frame.</p>
+    </div>
+    <div class="panel">
+      <h3>Skid marks &amp; tire tracks</h3>
+      <p>Persistent Canvas layer. When car speed > threshold and steering angle > 20°, draw dark grey semi-transparent short line segments at each rear wheel position. Line width = tire width (~4px). Accumulate on a static background canvas that never clears — marks persist on road until level reset.</p>
+    </div>
+  </div>
+</div>
+
+<!-- ENVIRONMENT -->
+<div id="sec-environment" class="section">
+  <canvas id="env-canvas" width="680" height="280" style="width:100%;border-radius:8px;border:0.5px solid var(--color-border-tertiary);margin-bottom:16px"></canvas>
+  <div class="row">
+    <div class="panel">
+      <h3>Road system</h3>
+      <p>Asphalt fill: <code>#3A3A3A</code>. Lane markings: dashed <code>#E8C84A</code> center lines (12px dash, 8px gap). Sidewalk: <code>#8B8070</code> strip 18px wide. Curb: 2px <code>#5A5040</code> line at edge. Crosswalk: white stripes 6px wide, 4px gap. Draw all as fillRect / fillText-free paths on a background canvas that redraws only when scrolling.</p>
+    </div>
+    <div class="panel">
+      <h3>Buildings (top-down)</h3>
+      <p>Building footprint: irregular polygon path (not a perfect rect — slight asymmetry makes it feel hand-drawn). Roof: slightly lighter fill. Roof edge highlight: 1px lighter top/left, 1px darker bottom/right (fake isometric lighting from NW). Windows: tiny dark rect clusters. Doorway: gap in outline with step path.</p>
+    </div>
+    <div class="panel">
+      <h3>Shadows &amp; lighting</h3>
+      <p>All objects cast a static offset shadow: semi-transparent dark ellipse drawn <em>before</em> the sprite, offset SE by (4px, 4px). Buildings cast longer rectangular shadow (sun from NW). Night mode: overlay semi-transparent dark blue rect over whole map, then draw circular light cones from streetlamps using radial compositing with <code>globalCompositeOperation</code>.</p>
+    </div>
+  </div>
+</div>
+
+<!-- CODE -->
+<div id="sec-code" class="section">
+  <div class="code"><span class="cm">// Draw a top-down car — no rectangles, all paths</span>
+<span class="kw">function</span> drawCar(ctx, x, y, angle, color, damage=<span class="st">0</span>) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  <span class="cm">// Shadow</span>
+  ctx.fillStyle = <span class="st">'rgba(0,0,0,0.25)'</span>;
+  ctx.beginPath();
+  ctx.ellipse(<span class="st">2</span>, <span class="st">3</span>, <span class="st">18</span>, <span class="st">10</span>, <span class="st">0</span>, <span class="st">0</span>, Math.PI*<span class="st">2</span>);
+  ctx.fill();
+
+  <span class="cm">// Body hull — organic path, NOT a rect</span>
+  ctx.fillStyle = color;
+  ctx.strokeStyle = shadeColor(color, -<span class="st">30</span>);
+  ctx.lineWidth = <span class="st">1.2</span>;
+  ctx.beginPath();
+  ctx.moveTo(-<span class="st">18</span>, -<span class="st">8</span>);
+  ctx.bezierCurveTo(-<span class="st">20</span>,-<span class="st">8</span>, -<span class="st">20</span>, <span class="st">8</span>, -<span class="st">17</span>, <span class="st">9</span>);  <span class="cm">// rear left</span>
+  ctx.lineTo(<span class="st">10</span>, <span class="st">10</span>);
+  ctx.bezierCurveTo(<span class="st">18</span>,<span class="st">10</span>, <span class="st">20</span>,<span class="st">7</span>, <span class="st">20</span>,<span class="st">4</span>);          <span class="cm">// front right</span>
+  ctx.lineTo(<span class="st">20</span>, -<span class="st">4</span>);
+  ctx.bezierCurveTo(<span class="st">20</span>,-<span class="st">7</span>, <span class="st">18</span>,-<span class="st">10</span>, <span class="st">10</span>,-<span class="st">10</span>);      <span class="cm">// front left</span>
+  ctx.lineTo(-<span class="st">17</span>, -<span class="st">9</span>);
+  ctx.closePath();
+  ctx.fill(); ctx.stroke();
+
+  <span class="cm">// Windshield — tinted translucent</span>
+  ctx.fillStyle = <span class="st">'rgba(140,200,240,0.55)'</span>;
+  ctx.beginPath();
+  ctx.moveTo(<span class="st">4</span>, -<span class="st">7</span>);
+  ctx.lineTo(<span class="st">15</span>, -<span class="st">6</span>);
+  ctx.lineTo(<span class="st">15</span>, <span class="st">6</span>);
+  ctx.lineTo(<span class="st">4</span>, <span class="st">7</span>);
+  ctx.closePath(); ctx.fill();
+
+  <span class="cm">// Roof (slightly darker, smaller)</span>
+  ctx.fillStyle = shadeColor(color, -<span class="st">15</span>);
+  ctx.beginPath();
+  ctx.moveTo(-<span class="st">14</span>,-<span class="st">7</span>); ctx.lineTo(<span class="st">3</span>,-<span class="st">7</span>);
+  ctx.lineTo(<span class="st">3</span>,<span class="st">7</span>);   ctx.lineTo(-<span class="st">14</span>,<span class="st">7</span>);
+  ctx.closePath(); ctx.fill();
+
+  <span class="cm">// Wheels — 4 dark ellipses at corners</span>
+  ctx.fillStyle = <span class="st">'#1a1a1a'</span>;
+  [[-<span class="st">14</span>,-<span class="st">10</span>],[<span class="st">12</span>,-<span class="st">10</span>],[-<span class="st">14</span>,<span class="st">10</span>],[<span class="st">12</span>,<span class="st">10</span>]].forEach(([wx,wy])=>{
+    ctx.beginPath();
+    ctx.ellipse(wx, wy, <span class="st">5</span>, <span class="st">3</span>, <span class="st">0</span>, <span class="st">0</span>, Math.PI*<span class="st">2</span>);
+    ctx.fill();
+    <span class="cm">// wheel rim highlight</span>
+    ctx.fillStyle=<span class="st">'rgba(255,255,255,0.25)'</span>;
+    ctx.beginPath(); ctx.ellipse(wx-<span class="st">1</span>,wy-<span class="st">1</span>,<span class="st">2</span>,<span class="st">1.5</span>,<span class="st">0</span>,<span class="st">0</span>,Math.PI*<span class="st">2</span>); ctx.fill();
+    ctx.fillStyle=<span class="st">'#1a1a1a'</span>;
+  });
+
+  <span class="cm">// Headlights</span>
+  ctx.fillStyle = <span class="st">'rgba(255,240,180,0.9)'</span>;
+  ctx.beginPath(); ctx.ellipse(<span class="st">20</span>,-<span class="st">5</span>,<span class="st">2</span>,<span class="st">1.5</span>,<span class="st">0</span>,<span class="st">0</span>,Math.PI*<span class="st">2</span>); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(<span class="st">20</span>,<span class="st">5</span>,<span class="st">2</span>,<span class="st">1.5</span>,<span class="st">0</span>,<span class="st">0</span>,Math.PI*<span class="st">2</span>); ctx.fill();
+
+  <span class="cm">// Taillights</span>
+  ctx.fillStyle = <span class="st">'rgba(220,40,40,0.85)'</span>;
+  ctx.beginPath(); ctx.ellipse(-<span class="st">18</span>,-<span class="st">6</span>,<span class="st">2</span>,<span class="st">1.5</span>,<span class="st">0</span>,<span class="st">0</span>,Math.PI*<span class="st">2</span>); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-<span class="st">18</span>,<span class="st">6</span>,<span class="st">2</span>,<span class="st">1.5</span>,<span class="st">0</span>,<span class="st">0</span>,Math.PI*<span class="st">2</span>); ctx.fill();
+
+  <span class="kw">if</span> (damage > <span class="st">0</span>) drawDamageOverlay(ctx, damage);
+  ctx.restore();
+}</div>
+
+  <div class="code"><span class="cm">// Draw top-down human — legs/torso/head as paths</span>
+<span class="kw">function</span> drawHuman(ctx, x, y, angle, walkFrame, skinColor, clothColor) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  <span class="kw">const</span> t = walkFrame;                <span class="cm">// 0..7 walk cycle</span>
+  <span class="kw">const</span> legSwing = Math.sin(t * Math.PI / <span class="st">4</span>) * <span class="st">3</span>;
+
+  <span class="cm">// Shadow</span>
+  ctx.fillStyle = <span class="st">'rgba(0,0,0,0.2)'</span>;
+  ctx.beginPath(); ctx.ellipse(<span class="st">1</span>,<span class="st">2</span>,<span class="st">5</span>,<span class="st">3</span>,<span class="st">0</span>,<span class="st">0</span>,Math.PI*<span class="st">2</span>); ctx.fill();
+
+  <span class="cm">// Left leg</span>
+  ctx.fillStyle = clothColor;
+  ctx.beginPath();
+  ctx.ellipse(-<span class="st">2</span>, <span class="st">3</span> + legSwing, <span class="st">2</span>, <span class="st">3.5</span>, <span class="st">0.1</span>, <span class="st">0</span>, Math.PI*<span class="st">2</span>); ctx.fill();
+
+  <span class="cm">// Right leg (opposite phase)</span>
+  ctx.beginPath();
+  ctx.ellipse(<span class="st">2</span>, <span class="st">3</span> - legSwing, <span class="st">2</span>, <span class="st">3.5</span>, -<span class="st">0.1</span>, <span class="st">0</span>, Math.PI*<span class="st">2</span>); ctx.fill();
+
+  <span class="cm">// Torso — tapered organic oval</span>
+  ctx.fillStyle = clothColor;
+  ctx.beginPath();
+  ctx.moveTo(-<span class="st">4</span>, <span class="st">0</span>);
+  ctx.bezierCurveTo(-<span class="st">4</span>,-<span class="st">6</span>,  <span class="st">4</span>,-<span class="st">6</span>,  <span class="st">4</span>,<span class="st">0</span>);
+  ctx.bezierCurveTo(<span class="st">3</span>,<span class="st">4</span>, -<span class="st">3</span>,<span class="st">4</span>, -<span class="st">4</span>,<span class="st">0</span>);
+  ctx.fill();
+
+  <span class="cm">// Arm (right, slightly raised when aiming)</span>
+  ctx.strokeStyle = skinColor; ctx.lineWidth=<span class="st">2</span>;
+  ctx.beginPath(); ctx.moveTo(<span class="st">3</span>,-<span class="st">2</span>); ctx.lineTo(<span class="st">7</span>,-<span class="st">5</span>); ctx.stroke();
+
+  <span class="cm">// Head — slight ellipse, not perfect circle</span>
+  ctx.fillStyle = skinColor;
+  ctx.beginPath();
+  ctx.ellipse(<span class="st">0</span>, -<span class="st">8</span>, <span class="st">3.8</span>, <span class="st">4.5</span>, <span class="st">0.05</span>, <span class="st">0</span>, Math.PI*<span class="st">2</span>); ctx.fill();
+
+  ctx.restore();
+}</div>
+
+  <div class="code"><span class="cm">// Animation manager — pre-render frames into offscreen canvases</span>
+<span class="kw">class</span> SpriteAnimator {
+  constructor(drawFn, frameCount, w, h) {
+    <span class="kw">this</span>.frames = Array.from({length: frameCount}, (_,i) => {
+      <span class="kw">const</span> oc = document.createElement(<span class="st">'canvas'</span>);
+      oc.width = w; oc.height = h;
+      drawFn(oc.getContext(<span class="st">'2d'</span>), i, frameCount);
+      <span class="kw">return</span> oc;
+    });
+    <span class="kw">this</span>.frame = <span class="st">0</span>;
+  }
+  tick(fps=<span class="st">12</span>) {
+    <span class="kw">this</span>.frame = (<span class="kw">this</span>.frame + <span class="st">1</span>) % <span class="kw">this</span>.frames.length;
+  }
+  draw(ctx, x, y) {
+    ctx.drawImage(<span class="kw">this</span>.frames[<span class="kw">this</span>.frame], x, y);
+  }
+}
+
+<span class="cm">// 16-direction car rotation pre-render</span>
+<span class="kw">const</span> CAR_ANGLES = <span class="st">16</span>;
+<span class="kw">const</span> carFrames = Array.from({length: CAR_ANGLES}, (_,i) => {
+  <span class="kw">const</span> oc = document.createElement(<span class="st">'canvas'</span>);
+  oc.width = <span class="st">56</span>; oc.height = <span class="st">56</span>;
+  <span class="kw">const</span> ctx = oc.getContext(<span class="st">'2d'</span>);
+  ctx.translate(<span class="st">28</span>,<span class="st">28</span>);
+  ctx.rotate(i * Math.PI*<span class="st">2</span> / CAR_ANGLES);
+  drawCar(ctx, <span class="st">0</span>, <span class="st">0</span>, <span class="st">0</span>, <span class="st">'#C0392B'</span>);
+  <span class="kw">return</span> oc;
+});
+
+<span class="cm">// At render time — snap to nearest pre-rendered angle</span>
+<span class="kw">function</span> drawCarRotated(ctx, x, y, worldAngle) {
+  <span class="kw">const</span> idx = Math.round(worldAngle/(Math.PI*<span class="st">2</span>)*CAR_ANGLES) % CAR_ANGLES;
+  ctx.drawImage(carFrames[(idx+CAR_ANGLES)%CAR_ANGLES], x-<span class="st">28</span>, y-<span class="st">28</span>);
+}</div>
+</div>
+
+</div>
+
+<script>
+function sw(id){
+  document.querySelectorAll('.section').forEach(s=>s.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('active'));
+  document.getElementById('sec-'+id).classList.add('active');
+  event.target.classList.add('active');
+  if(id==='cars') drawCarSection();
+  if(id==='humans') drawHumanSection();
+  if(id==='police') drawPoliceSection();
+  if(id==='environment') drawEnvSection();
+  if(id==='animations') startAnim();
+}
+
+function shadeColor(hex, amount) {
+  let r=parseInt(hex.slice(1,3),16), g=parseInt(hex.slice(3,5),16), b=parseInt(hex.slice(5,7),16);
+  r=Math.max(0,Math.min(255,r+amount));
+  g=Math.max(0,Math.min(255,g+amount));
+  b=Math.max(0,Math.min(255,b+amount));
+  return '#'+[r,g,b].map(v=>v.toString(16).padStart(2,'0')).join('');
+}
+
+function drawCar(ctx, color, damage=0, police=false, lightOn=false) {
+  ctx.save();
+  ctx.fillStyle='rgba(0,0,0,0.22)';
+  ctx.beginPath(); ctx.ellipse(2,3,19,11,0,0,Math.PI*2); ctx.fill();
+
+  ctx.fillStyle=color;
+  ctx.strokeStyle=shadeColor(color,-35);
+  ctx.lineWidth=1.2;
+  ctx.beginPath();
+  ctx.moveTo(-18,-8);
+  ctx.bezierCurveTo(-20,-8,-20,8,-17,9);
+  ctx.lineTo(10,10);
+  ctx.bezierCurveTo(18,10,21,7,21,4);
+  ctx.lineTo(21,-4);
+  ctx.bezierCurveTo(21,-7,18,-10,10,-10);
+  ctx.lineTo(-17,-9);
+  ctx.closePath(); ctx.fill(); ctx.stroke();
+
+  if(police) {
+    ctx.fillStyle='#1a1a2e';
+    ctx.beginPath();
+    ctx.moveTo(-18,-8); ctx.lineTo(0,-8.5); ctx.lineTo(0,9.5); ctx.lineTo(-17,9); ctx.closePath(); ctx.fill();
+  }
+
+  ctx.fillStyle='rgba(150,210,245,0.55)';
+  ctx.beginPath(); ctx.moveTo(5,-7); ctx.lineTo(16,-6); ctx.lineTo(16,6); ctx.lineTo(5,7); ctx.closePath(); ctx.fill();
+  ctx.strokeStyle='rgba(180,230,255,0.4)'; ctx.lineWidth=0.5; ctx.stroke();
+
+  ctx.fillStyle=police?shadeColor('#1a1a2e',+20):shadeColor(color,-18);
+  ctx.beginPath(); ctx.moveTo(-13,-6.5); ctx.lineTo(4,-7); ctx.lineTo(4,7); ctx.lineTo(-13,6.5); ctx.closePath(); ctx.fill();
+
+  ctx.strokeStyle='rgba(0,0,0,0.35)'; ctx.lineWidth=0.6;
+  ctx.beginPath(); ctx.moveTo(-4,-9.5); ctx.lineTo(-4,9.5); ctx.stroke();
+
+  [[-14,-10],[13,-10],[-14,10],[13,10]].forEach(([wx,wy])=>{
+    ctx.fillStyle='#111';
+    ctx.beginPath(); ctx.ellipse(wx,wy,5,3.2,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle='rgba(255,255,255,0.2)';
+    ctx.beginPath(); ctx.ellipse(wx-1,wy-1,2,1.5,0,0,Math.PI*2); ctx.fill();
+  });
+
+  ctx.fillStyle='rgba(255,240,150,0.95)';
+  ctx.beginPath(); ctx.ellipse(21,-5,2.5,1.8,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(21,5,2.5,1.8,0,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle='rgba(220,35,35,0.88)';
+  ctx.beginPath(); ctx.ellipse(-19,-6.5,2,1.5,0,0,Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.ellipse(-19,6.5,2,1.5,0,0,Math.PI*2); ctx.fill();
+
+  if(police) {
+    ctx.fillStyle=lightOn?'#E24B4A':'#c03030';
+    ctx.beginPath(); ctx.ellipse(-6,-0.5,4.5,2.5,0,0,Math.PI*2); ctx.fill();
+    ctx.fillStyle=lightOn?'#378ADD':'#2055a0';
+    ctx.beginPath(); ctx.ellipse(1,-0.5,4.5,2.5,0,0,Math.PI*2); ctx.fill();
+  }
+
+  if(damage>0) {
+    ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=1;
+    ctx.beginPath(); ctx.moveTo(-5,-9); ctx.lineTo(-2,-6); ctx.moveTo(8,-10); ctx.lineTo(6,-7); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+function drawHuman(ctx, walkF, skinColor, clothColor, hatColor, weapon=false) {
+  ctx.save();
+  const t = walkF;
+  const legSwing = Math.sin(t*Math.PI/4)*3.5;
+  const headBob = Math.abs(Math.sin(t*Math.PI/4))*0.8;
+
+  ctx.fillStyle='rgba(0,0,0,0.2)';
+  ctx.beginPath(); ctx.ellipse(1,2,5.5,3,0,0,Math.PI*2); ctx.fill();
+
+  ctx.fillStyle=clothColor;
+  ctx.beginPath(); ctx.ellipse(-2.2,3+legSwing,2,3.8,0.1,0,Math.PI*2); ctx.fill();
+  ctx.fillStyle=shadeColor(clothColor,10);
+  ctx.beginPath(); ctx.ellipse(2.2,3-legSwing,2,3.8,-0.1,0,Math.PI*2); ctx.fill();
+
+  ctx.fillStyle=clothColor;
+  ctx.beginPath();
+  ctx.moveTo(-4.5,0.5); ctx.bezierCurveTo(-4.5,-6,4.5,-6,4.5,0.5);
+  ctx.bezierCurveTo(3.5,4.5,-3.5,4.5,-4.5,0.5); ctx.fill();
+
+  ctx.strokeStyle=skinColor; ctx.lineWidth=2.2; ctx.lineCap='round';
+  ctx.beginPath(); ctx.moveTo(-4,-2); ctx.lineTo(-7,-5+legSwing*0.4); ctx.stroke();
+  if(weapon) {
+    ctx.beginPath(); ctx.moveTo(4,-2); ctx.lineTo(9,-5); ctx.stroke();
+    ctx.fillStyle='#333';
+    ctx.beginPath(); ctx.ellipse(9,-5,3,1.5,0.3,0,Math.PI*2); ctx.fill();
+  } else {
+    ctx.beginPath(); ctx.moveTo(4,-2); ctx.lineTo(7,-5-legSwing*0.4); ctx.stroke();
+  }
+
+  ctx.fillStyle=skinColor;
+  ctx.beginPath(); ctx.ellipse(0,-8-headBob,4,4.8,0.05,0,Math.PI*2); ctx.fill();
+
+  if(hatColor) {
+    ctx.fillStyle=hatColor;
+    ctx.beginPath();
+    ctx.moveTo(-5,-9.5-headBob); ctx.lineTo(5,-9.5-headBob);
+    ctx.lineTo(4,-13-headBob); ctx.lineTo(-4,-13-headBob); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0,-9.5-headBob,5.5,1.5,0,0,Math.PI*2); ctx.fill();
+  }
+  ctx.restore();
+}
+
+function makeCanvas(w,h) {
+  const c=document.createElement('canvas'); c.width=w; c.height=h;
+  c.style.cssText=`width:${w}px;height:${h}px;image-rendering:pixelated`;
+  return c;
+}
+
+function drawCarSection() {
+  const container=document.getElementById('car-canvases');
+  container.innerHTML='';
+  const cars=[
+    {label:'Sedan',color:'#2E86AB',w:70,h:56},
+    {label:'Muscle car',color:'#C0392B',w:70,h:56},
+    {label:'Truck',color:'#7B6D4F',w:80,h:68},
+    {label:'Sports car',color:'#F39C12',w:70,h:48},
+    {label:'Taxi',color:'#F1C40F',w:70,h:56},
+  ];
+  cars.forEach(({label,color,w,h})=>{
+    const c=makeCanvas(w*2,h*2);
+    const ctx=c.getContext('2d');
+    ctx.scale(2,2);
+    ctx.translate(w/2,h/2);
+    const isWide=(label==='Truck');
+    if(isWide){ctx.scale(1.3,1.2);}
+    if(label==='Sports car'){ctx.scale(1.0,0.85);}
+    drawCar(ctx,color,0,false,false);
+    const wrap=document.createElement('div');
+    wrap.className='canwrap';
+    const lbl=document.createElement('div');
+    lbl.className='canlabel'; lbl.textContent=label;
+    wrap.appendChild(c); wrap.appendChild(lbl);
+    container.appendChild(wrap);
+  });
+}
+
+function drawHumanSection() {
+  const container=document.getElementById('human-canvases');
+  container.innerHTML='';
+  const humans=[
+    {label:'Player',skin:'#D4956A',cloth:'#1a4a7a',hat:null,w:true},
+    {label:'Pedestrian',skin:'#8B6355',cloth:'#5B7A3F',hat:null,w:false},
+    {label:'Gang member',skin:'#C8896A',cloth:'#2C2C2C',hat:'#2C2C2C',w:true},
+    {label:'SWAT',skin:'#C8A882',cloth:'#2D4A2D',hat:'#1a1a1a',w:true},
+    {label:'Pedestrian F',skin:'#E8B89A',cloth:'#8B3A5A',hat:null,w:false},
+  ];
+  humans.forEach(({label,skin,cloth,hat,w})=>{
+    const c=makeCanvas(60,72);
+    const ctx=c.getContext('2d');
+    ctx.scale(2,2);
+    ctx.translate(15,26);
+    drawHuman(ctx,2,skin,cloth,hat,w);
+    const wrap=document.createElement('div');
+    wrap.className='canwrap';
+    const lbl=document.createElement('div');
+    lbl.className='canlabel'; lbl.textContent=label;
+    wrap.appendChild(c); wrap.appendChild(lbl);
+    container.appendChild(wrap);
+  });
+}
+
+function drawPoliceSection() {
+  const container=document.getElementById('police-canvases');
+  container.innerHTML='';
+  const items=[
+    {label:'Cruiser (siren off)',police:true,light:false},
+    {label:'Cruiser (siren on)',police:true,light:true},
+    {label:'Officer on foot',type:'human'},
+    {label:'SWAT van',type:'van'},
+  ];
+  items.forEach(({label,police,light,type})=>{
+    const c=makeCanvas(type==='van'?100:80,80);
+    const ctx=c.getContext('2d');
+    ctx.scale(2,2);
+    if(type==='human'){
+      ctx.translate(20,28);
+      drawHuman(ctx,2,'#D4956A','#1a2a5a','#1a2a5a',true);
+    } else if(type==='van'){
+      ctx.translate(25,20);
+      ctx.scale(1.3,1.5);
+      drawCar(ctx,'#1a1a2e',0,true,false);
+    } else {
+      ctx.translate(c.width/4,c.height/4);
+      drawCar(ctx,'#ffffff',0,police,light);
+    }
+    const wrap=document.createElement('div');
+    wrap.className='canwrap';
+    const lbl=document.createElement('div');
+    lbl.className='canlabel'; lbl.textContent=label;
+    wrap.appendChild(c); wrap.appendChild(lbl);
+    container.appendChild(wrap);
+  });
+}
+
+function drawEnvSection() {
+  const c=document.getElementById('env-canvas');
+  const ctx=c.getContext('2d');
+  const W=680,H=280;
+  ctx.clearRect(0,0,W,H);
+
+  ctx.fillStyle='#4A7A3F';
+  ctx.fillRect(0,0,W,H);
+
+  const roads=[
+    {x:0,y:100,w:W,h:60,dir:'h'},
+    {x:300,y:0,w:60,h:H,dir:'v'},
+  ];
+  ctx.fillStyle='#3A3A3A';
+  roads.forEach(r=>ctx.fillRect(r.x,r.y,r.w,r.h));
+
+  ctx.fillStyle='#7A7060';
+  [[0,96,W,4],[0,160,W,4],[296,0,4,H],[360,0,4,H]].forEach(([x,y,w,h])=>ctx.fillRect(x,y,w,h));
+
+  ctx.strokeStyle='#E8C84A'; ctx.lineWidth=2;
+  ctx.setLineDash([14,10]);
+  ctx.beginPath(); ctx.moveTo(0,130); ctx.lineTo(296,130); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(360,130); ctx.lineTo(W,130); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(330,0); ctx.lineTo(330,100); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(330,160); ctx.lineTo(330,H); ctx.stroke();
+  ctx.setLineDash([]);
+
+  ctx.strokeStyle='rgba(255,255,255,0.7)'; ctx.lineWidth=1;
+  for(let x=310;x<330;x+=4){
+    ctx.beginPath(); ctx.moveTo(x,100); ctx.lineTo(x,160); ctx.stroke();
+  }
+
+  const buildings=[
+    {x:20,y:20,pts:[[0,0],[120,0],[125,55],[10,60]],color:'#8B7355'},
+    {x:170,y:20,pts:[[0,0],[100,2],[98,50],[0,52]],color:'#6B8B7A'},
+    {x:380,y:20,pts:[[0,0],[130,0],[132,55],[5,58]],color:'#7A6B8B'},
+    {x:20,y:190,pts:[[0,0],[140,0],[138,60],[0,62]],color:'#8B6B5A'},
+    {x:380,y:190,pts:[[0,0],[110,0],[112,58],[2,60]],color:'#5A7A6B'},
+  ];
+  buildings.forEach(({x,y,pts,color})=>{
+    ctx.fillStyle='rgba(0,0,0,0.2)';
+    ctx.beginPath();
+    ctx.moveTo(x+pts[0][0]+4,y+pts[0][1]+4);
+    pts.slice(1).forEach(p=>ctx.lineTo(x+p[0]+4,y+p[1]+4));
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle=color;
+    ctx.beginPath();
+    ctx.moveTo(x+pts[0][0],y+pts[0][1]);
+    pts.slice(1).forEach(p=>ctx.lineTo(x+p[0],y+p[1]));
+    ctx.closePath(); ctx.fill();
+
+    ctx.fillStyle=shadeColor(color,15);
+    ctx.beginPath();
+    ctx.moveTo(x+pts[0][0]+6,y+pts[0][1]+6);
+    pts.slice(1).forEach(p=>ctx.lineTo(x+p[0]-6,y+p[1]+6));
+    ctx.closePath(); ctx.fill();
+
+    ctx.strokeStyle=shadeColor(color,-20); ctx.lineWidth=0.8;
+    ctx.beginPath();
+    ctx.moveTo(x+pts[0][0],y+pts[0][1]);
+    pts.slice(1).forEach(p=>ctx.lineTo(x+p[0],y+p[1]));
+    ctx.closePath(); ctx.stroke();
+
+    ctx.fillStyle='rgba(180,220,255,0.35)';
+    for(let wy=14;wy<pts[2][1]-14;wy+=12){
+      for(let wx=10;wx<pts[1][0]-20;wx+=14){
+        ctx.fillRect(x+wx,y+wy,7,6);
+      }
+    }
+  });
+
+  ctx.translate(120,133); ctx.scale(1.8,1.8);
+  drawCar(ctx,'#C0392B',0,false,false);
+  ctx.setTransform(1,0,0,1,0,0);
+
+  ctx.translate(430,115); ctx.rotate(Math.PI/2); ctx.scale(1.8,1.8);
+  drawCar(ctx,'#ffffff',0,true,true);
+  ctx.setTransform(1,0,0,1,0,0);
+
+  ctx.translate(55,200); ctx.scale(2,2);
+  drawHuman(ctx,2,'#D4956A','#1a4a7a',null,true);
+  ctx.setTransform(1,0,0,1,0,0);
+
+  ctx.fillStyle='rgba(80,60,40,0.4)';
+  [[148,125,3],[140,128,2],[135,132,2]].forEach(([x,y,r])=>{
+    ctx.beginPath(); ctx.ellipse(x,y,r*5,r*2,0.3,0,Math.PI*2); ctx.fill();
+  });
+
+  ctx.fillStyle='rgba(255,180,0,0.6)';
+  ctx.beginPath(); ctx.ellipse(430,115,40,12,-0.2,0,Math.PI*2); ctx.fill();
+}
+
+let animRunning=true, animFrame=0, animFPS=12, animTimer=null;
+let sirenOn=false;
+
+function startAnim(){
+  if(animTimer) clearInterval(animTimer);
+  const c=document.getElementById('anim-canvas');
+  const ctx=c.getContext('2d');
+  let expFrame=-1, expX=340, expY=110;
+  let sirenToggle=0;
+
+  function renderFrame(){
+    ctx.clearRect(0,0,680,220);
+    ctx.fillStyle='#3A3A3A';
+    ctx.fillRect(0,0,680,220);
+    ctx.strokeStyle='#E8C84A'; ctx.lineWidth=2; ctx.setLineDash([14,10]);
+    ctx.beginPath(); ctx.moveTo(0,110); ctx.lineTo(680,110); ctx.stroke();
+    ctx.setLineDash([]);
+
+    sirenToggle++;
+    const sL=(sirenToggle%6)<3;
+
+    ctx.save(); ctx.translate(130,110); ctx.scale(2,2); drawCar(ctx,'#C0392B',0,false,false); ctx.restore();
+    ctx.save(); ctx.translate(480,110); ctx.rotate(Math.PI); ctx.scale(2,2); drawCar(ctx,'#fff',0,true,sL); ctx.restore();
+
+    const wF=animFrame%8;
+    ctx.save(); ctx.translate(260,110); ctx.scale(1.8,1.8); drawHuman(ctx,wF,'#D4956A','#1a4a7a',null,true); ctx.restore();
+    ctx.save(); ctx.translate(390,110); ctx.rotate(Math.PI); ctx.scale(1.8,1.8); drawHuman(ctx,wF,'#8B6355','#5B7A3F',null,false); ctx.restore();
+
+    if(expFrame>=0&&expFrame<12){
+      const ef=expFrame;
+      const r=(ef<4)?ef*8+5:(ef<9)?(ef-4)*6+37:(12-ef)*5+5;
+      if(ef<4){
+        ctx.fillStyle=`rgba(255,240,180,${1-ef*0.15})`;
+        ctx.beginPath(); ctx.arc(expX,expY,r,0,Math.PI*2); ctx.fill();
+      } else if(ef<9){
+        ctx.fillStyle=`rgba(200,80,20,${0.9-(ef-4)*0.12})`;
+        ctx.beginPath();
+        for(let i=0;i<12;i++){
+          const a=i/12*Math.PI*2;
+          const spike=i%2===0?r:r*0.6;
+          if(i===0)ctx.moveTo(expX+Math.cos(a)*spike,expY+Math.sin(a)*spike);
+          else ctx.lineTo(expX+Math.cos(a)*spike,expY+Math.sin(a)*spike);
+        }
+        ctx.closePath(); ctx.fill();
+      } else {
+        ctx.fillStyle=`rgba(80,80,80,${0.6-(ef-9)*0.15})`;
+        [[-10,-8],[8,-12],[0,-18]].forEach(([dx,dy])=>{
+          ctx.beginPath(); ctx.ellipse(expX+dx,expY+dy+(ef-9)*4,r*0.4,r*0.3,0,0,Math.PI*2); ctx.fill();
+        });
+      }
+      expFrame++;
+    }
+
+    ctx.fillStyle='rgba(255,255,255,0.7)';
+    ctx.font='11px monospace';
+    ctx.fillText(`frame:${animFrame%8}  fps:${animFPS}  [click canvas = explosion]`,10,210);
+
+    if(animRunning) animFrame++;
+  }
+
+  c.onclick=(e)=>{
+    const r=c.getBoundingClientRect();
+    expX=(e.clientX-r.left)*(680/r.width);
+    expY=(e.clientY-r.top)*(220/r.height);
+    expFrame=0;
+  };
+
+  if(animTimer) clearInterval(animTimer);
+  animTimer=setInterval(renderFrame, 1000/animFPS);
+}
+
+function toggleAnim(){ animRunning=!animRunning; }
+function setFPS(v){ animFPS=v; document.getElementById('fps-val').textContent=v; if(animTimer){clearInterval(animTimer);startAnim();} }
+
+drawCarSection();
+</script>

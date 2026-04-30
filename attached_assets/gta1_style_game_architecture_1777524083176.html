@@ -1,0 +1,632 @@
+
+<style>
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: var(--font-sans); }
+
+.tabs { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 20px; }
+.tab { padding: 7px 14px; font-size: 13px; border: 0.5px solid var(--color-border-secondary); border-radius: var(--border-radius-md); cursor: pointer; background: transparent; color: var(--color-text-secondary); transition: all .15s; }
+.tab.active { background: var(--color-background-secondary); color: var(--color-text-primary); font-weight: 500; border-color: var(--color-border-primary); }
+.tab:hover:not(.active) { background: var(--color-background-secondary); }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+.section-title { font-size: 13px; font-weight: 500; color: var(--color-text-secondary); text-transform: uppercase; letter-spacing: .06em; margin: 20px 0 10px; }
+.section-title:first-child { margin-top: 0; }
+
+.cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 10px; margin-bottom: 16px; }
+.card { background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; }
+.card h4 { font-size: 13px; font-weight: 500; margin-bottom: 5px; color: var(--color-text-primary); }
+.card p, .card li { font-size: 12px; color: var(--color-text-secondary); line-height: 1.6; }
+.card ul { padding-left: 14px; }
+
+.badge { display: inline-block; font-size: 11px; padding: 2px 8px; border-radius: 99px; font-weight: 500; margin: 2px 2px 2px 0; }
+.badge-blue { background: var(--color-background-info); color: var(--color-text-info); }
+.badge-red { background: var(--color-background-danger); color: var(--color-text-danger); }
+.badge-green { background: var(--color-background-success); color: var(--color-text-success); }
+.badge-amber { background: var(--color-background-warning); color: var(--color-text-warning); }
+.badge-gray { background: var(--color-background-secondary); color: var(--color-text-secondary); border: 0.5px solid var(--color-border-secondary); }
+
+.flow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-bottom: 10px; }
+.flow-node { font-size: 12px; padding: 5px 10px; border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-secondary); background: var(--color-background-primary); color: var(--color-text-primary); }
+.flow-arrow { font-size: 14px; color: var(--color-text-tertiary); }
+
+.code { background: var(--color-background-secondary); border: 0.5px solid var(--color-border-tertiary); border-radius: var(--border-radius-md); padding: 12px; font-family: var(--font-mono); font-size: 11.5px; line-height: 1.7; color: var(--color-text-primary); overflow-x: auto; white-space: pre; margin-bottom: 12px; }
+.kw { color: var(--color-text-info); }
+.cm { color: var(--color-text-tertiary); }
+.st { color: var(--color-text-success); }
+
+.music-row { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+.music-row:last-child { border-bottom: none; }
+.music-icon { width: 36px; height: 36px; border-radius: var(--border-radius-md); display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+.music-info { flex: 1; }
+.music-info h4 { font-size: 13px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 2px; }
+.music-info p { font-size: 12px; color: var(--color-text-secondary); line-height: 1.5; }
+.music-trigger { font-size: 11px; margin-top: 4px; }
+
+.wanted { display: flex; gap: 6px; align-items: center; margin-bottom: 12px; }
+.star { font-size: 18px; }
+.star.on { color: #E8A020; }
+.star.off { color: var(--color-border-secondary); }
+.wanted-desc { font-size: 12px; color: var(--color-text-secondary); margin-left: 4px; }
+
+.entity-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.entity-card { background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); padding: 12px; }
+.entity-card h4 { font-size: 13px; font-weight: 500; margin-bottom: 8px; }
+.prop { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; border-bottom: 0.5px solid var(--color-border-tertiary); }
+.prop:last-child { border-bottom: none; }
+.prop-key { color: var(--color-text-secondary); }
+.prop-val { color: var(--color-text-primary); font-family: var(--font-mono); font-size: 11px; }
+
+.map-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.map-card { background: var(--color-background-secondary); border-radius: var(--border-radius-md); border: 0.5px solid var(--color-border-tertiary); padding: 10px; cursor: pointer; transition: border-color .15s; }
+.map-card:hover { border-color: var(--color-border-primary); }
+.map-card h4 { font-size: 13px; font-weight: 500; margin-bottom: 4px; }
+.map-card p { font-size: 11px; color: var(--color-text-secondary); }
+
+table.upgrade { width: 100%; border-collapse: collapse; font-size: 12px; margin-bottom: 16px; }
+table.upgrade th { text-align: left; font-weight: 500; font-size: 12px; color: var(--color-text-secondary); padding: 6px 8px; border-bottom: 0.5px solid var(--color-border-secondary); }
+table.upgrade td { padding: 6px 8px; border-bottom: 0.5px solid var(--color-border-tertiary); vertical-align: top; color: var(--color-text-primary); }
+table.upgrade tr:last-child td { border-bottom: none; }
+
+.progress-bar { height: 6px; background: var(--color-border-tertiary); border-radius: 99px; overflow: hidden; margin-top: 4px; }
+.progress-fill { height: 100%; border-radius: 99px; transition: width .3s; }
+</style>
+
+<div style="padding: 1rem 0;">
+  <div style="margin-bottom: 16px;">
+    <div style="font-size: 18px; font-weight: 500; color: var(--color-text-primary); margin-bottom: 4px;">GTA 1-style game — complete architecture</div>
+    <div style="font-size: 13px; color: var(--color-text-secondary);">Top-down open-world crime game with missions, police, cars, humans, and weapons</div>
+  </div>
+
+  <div class="tabs">
+    <button class="tab active" onclick="show('systems')">Core systems</button>
+    <button class="tab" onclick="show('entities')">Entities & types</button>
+    <button class="tab" onclick="show('music')">Music system</button>
+    <button class="tab" onclick="show('code')">Code architecture</button>
+    <button class="tab" onclick="show('maps')">Maps & levels</button>
+    <button class="tab" onclick="show('police')">Police & wanted</button>
+    <button class="tab" onclick="show('garage')">Garage & upgrades</button>
+  </div>
+
+  <!-- SYSTEMS -->
+  <div id="panel-systems" class="panel active">
+    <div class="section-title">Game loop — every frame</div>
+    <div class="flow" style="margin-bottom:16px;">
+      <div class="flow-node">Input handler</div><div class="flow-arrow">→</div>
+      <div class="flow-node">Physics update</div><div class="flow-arrow">→</div>
+      <div class="flow-node">AI tick</div><div class="flow-arrow">→</div>
+      <div class="flow-node">Collision</div><div class="flow-arrow">→</div>
+      <div class="flow-node">Mission eval</div><div class="flow-arrow">→</div>
+      <div class="flow-node">Render</div><div class="flow-arrow">→</div>
+      <div class="flow-node">HUD / minimap</div>
+    </div>
+
+    <div class="section-title">Core system modules</div>
+    <div class="cards">
+      <div class="card">
+        <h4>🚗 Vehicle system</h4>
+        <ul>
+          <li>Rigidbody with friction, mass, engine torque</li>
+          <li>Steer angle → rotation lerp</li>
+          <li>Enter/exit radius trigger</li>
+          <li>Damage model (4 panels + engine)</li>
+          <li>Speed tiers: sedan, muscle, truck, police</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>🧍 Human AI system</h4>
+        <ul>
+          <li>Pedestrian wander (navmesh waypoints)</li>
+          <li>Panic flee on gunshot / explosion</li>
+          <li>Carjack victim → exit car, run</li>
+          <li>Gang member → patrol → attack</li>
+          <li>Police officer → pursue → arrest</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>🔫 Weapons system</h4>
+        <ul>
+          <li>Hitscan raycast (pistol, SMG)</li>
+          <li>Projectile physics (RPG, grenade)</li>
+          <li>Ammo pool per weapon type</li>
+          <li>Fire rate timer, reload state</li>
+          <li>Equip from ground pickup or garage</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>📋 Mission system</h4>
+        <ul>
+          <li>Mission: array of Objectives</li>
+          <li>Types: Reach, Destroy, Collect, Escape, Timer</li>
+          <li>Trigger zones (invisible rect colliders)</li>
+          <li>Branching success/fail paths</li>
+          <li>Score multiplier per completion</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>💥 Damage & health</h4>
+        <ul>
+          <li>Player HP + car HP separate</li>
+          <li>On-foot: bullet, explosion, runover</li>
+          <li>Car: collision speed × mass, bullets</li>
+          <li>Fire spread to nearby vehicles</li>
+          <li>Respawn at hospital / busted at police</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>🗺 Minimap</h4>
+        <ul>
+          <li>Canvas 2D overlay, 150×150px</li>
+          <li>Dot: player (white), enemy (red), objective (yellow), police (blue)</li>
+          <li>Clip circle, rotate with player heading</li>
+          <li>Blip pulse on objective</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>⚡ Power-ups</h4>
+        <ul>
+          <li>Spawn on timer or at fixed positions</li>
+          <li>Types: Health +50, Ammo ×2, Speed 15s, Armor +50, Wanted Clear</li>
+          <li>Bobbing animation, collect radius</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>🏆 Score & progression</h4>
+        <ul>
+          <li>Score: kills, missions, stunts, wanted evade</li>
+          <li>Multiplier: combo chain within 10s</li>
+          <li>Level unlock at score threshold</li>
+          <li>Money: spend in garage</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- ENTITIES -->
+  <div id="panel-entities" class="panel">
+    <div class="section-title">Entity hierarchy (JavaScript classes)</div>
+    <div class="flow" style="margin-bottom:16px;">
+      <div class="flow-node" style="background:var(--color-background-secondary);font-weight:500;">Entity (base)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Vehicle</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Sedan / Muscle / Truck / Police cruiser</div>
+    </div>
+    <div class="flow" style="margin-bottom:16px;">
+      <div class="flow-node" style="background:var(--color-background-secondary);font-weight:500;">Entity (base)</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Human</div>
+      <div class="flow-arrow">→</div>
+      <div class="flow-node">Player / Pedestrian / Gang member / Police officer</div>
+    </div>
+
+    <div class="section-title">Entity type reference</div>
+    <div class="entity-grid">
+      <div class="entity-card">
+        <h4>🚙 Vehicle types</h4>
+        <div class="prop"><span class="prop-key">Sedan</span><span class="prop-val">speed:120, armor:80, handling:0.7</span></div>
+        <div class="prop"><span class="prop-key">Muscle car</span><span class="prop-val">speed:180, armor:60, handling:0.5</span></div>
+        <div class="prop"><span class="prop-key">Truck</span><span class="prop-val">speed:80, armor:200, handling:0.3</span></div>
+        <div class="prop"><span class="prop-key">Police cruiser</span><span class="prop-val">speed:160, armor:120, handling:0.8</span></div>
+        <div class="prop"><span class="prop-key">Sports car</span><span class="prop-val">speed:220, armor:50, handling:0.9</span></div>
+        <div class="prop"><span class="prop-key">Taxi</span><span class="prop-val">speed:100, armor:70, handling:0.6</span></div>
+        <div class="prop"><span class="prop-key">Motorbike</span><span class="prop-val">speed:200, armor:20, handling:1.0</span></div>
+      </div>
+      <div class="entity-card">
+        <h4>🧍 Human types</h4>
+        <div class="prop"><span class="prop-key">Player</span><span class="prop-val">HP:100, speed:5, can_steal:true</span></div>
+        <div class="prop"><span class="prop-key">Pedestrian</span><span class="prop-val">HP:50, AI:wander/flee</span></div>
+        <div class="prop"><span class="prop-key">Gang member</span><span class="prop-val">HP:75, AI:patrol/attack</span></div>
+        <div class="prop"><span class="prop-key">Police officer</span><span class="prop-val">HP:100, AI:pursue/arrest</span></div>
+        <div class="prop"><span class="prop-key">SWAT</span><span class="prop-val">HP:150, AI:tactical/breach</span></div>
+        <div class="prop"><span class="prop-key">Carjack victim</span><span class="prop-val">HP:50, AI:resist/flee</span></div>
+      </div>
+      <div class="entity-card">
+        <h4>🔫 Weapon types</h4>
+        <div class="prop"><span class="prop-key">Fists</span><span class="prop-val">dmg:10, range:1m, ammo:∞</span></div>
+        <div class="prop"><span class="prop-key">Pistol</span><span class="prop-val">dmg:25, range:30m, ammo:30</span></div>
+        <div class="prop"><span class="prop-key">SMG</span><span class="prop-val">dmg:15×, range:20m, ammo:90</span></div>
+        <div class="prop"><span class="prop-key">Shotgun</span><span class="prop-val">dmg:60, range:8m, ammo:20</span></div>
+        <div class="prop"><span class="prop-key">Rifle</span><span class="prop-val">dmg:50, range:80m, ammo:40</span></div>
+        <div class="prop"><span class="prop-key">RPG</span><span class="prop-val">dmg:200r, range:100m, ammo:5</span></div>
+        <div class="prop"><span class="prop-key">Grenade</span><span class="prop-val">dmg:150r, radius:8m, ammo:5</span></div>
+        <div class="prop"><span class="prop-key">Flame</span><span class="prop-val">dmg:20/s, range:5m, ammo:60s</span></div>
+      </div>
+      <div class="entity-card">
+        <h4>📋 Mission objective types</h4>
+        <div class="prop"><span class="prop-key">ReachCheckpoint</span><span class="prop-val">arrive at zone</span></div>
+        <div class="prop"><span class="prop-key">DestroyTarget</span><span class="prop-val">kill/destroy N entities</span></div>
+        <div class="prop"><span class="prop-key">CollectItem</span><span class="prop-val">pick up N pickups</span></div>
+        <div class="prop"><span class="prop-key">EscapeZone</span><span class="prop-val">exit area, evade police</span></div>
+        <div class="prop"><span class="prop-key">ProtectTarget</span><span class="prop-val">keep NPC alive</span></div>
+        <div class="prop"><span class="prop-key">DeliverVehicle</span><span class="prop-val">bring car to location</span></div>
+        <div class="prop"><span class="prop-key">TimedEvent</span><span class="prop-val">complete before timer</span></div>
+        <div class="prop"><span class="prop-key">ChaseTarget</span><span class="prop-val">pursue fleeing vehicle</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- MUSIC -->
+  <div id="panel-music" class="panel">
+    <div class="section-title">Adaptive music system — situation-driven</div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:var(--color-background-secondary);">🌆</div>
+      <div class="music-info">
+        <h4>Ambient city — calm exploration</h4>
+        <p>Lo-fi hip-hop, jazz-funk, chill synthwave. Slow tempo (70-90 BPM). Background city noise layered under music.</p>
+        <div class="music-trigger"><span class="badge badge-gray">Trigger: no wanted, not in mission, driving or on foot</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#FEF3E0;">🎯</div>
+      <div class="music-info">
+        <h4>Mission briefing / start</h4>
+        <p>Staccato brass stings, synth arp, tense cinematic intro riff (5-8s). Think GTA1's mission jingle.</p>
+        <div class="music-trigger"><span class="badge badge-amber">Trigger: mission accepted → cut to action track</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#EDF5FF;">🔫</div>
+      <div class="music-info">
+        <h4>Combat / gunfight</h4>
+        <p>High-BPM drum & bass or heavy industrial techno (140-170 BPM). Aggressive synths, distorted bass, driving percussion.</p>
+        <div class="music-trigger"><span class="badge badge-blue">Trigger: player fires weapon OR enemy AI enters attack state</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#FFF0F0;">🚨</div>
+      <div class="music-info">
+        <h4>Police chase — low wanted (1-2 stars)</h4>
+        <p>Funky uptempo groove, wah guitar, chase-movie energy. Think 70s cop show theme (110-130 BPM).</p>
+        <div class="music-trigger"><span class="badge badge-red">Trigger: wanted ≥ 1 and police in pursuit</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#FFF0F0;">🚁</div>
+      <div class="music-info">
+        <h4>Police chase — high wanted (3-5 stars)</h4>
+        <p>Intense orchestral + electronic hybrid. Staccato strings, alarm synths, racing drums (150+ BPM). Escalates every additional star.</p>
+        <div class="music-trigger"><span class="badge badge-red">Trigger: wanted ≥ 3, SWAT deployed</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#F0FFF4;">✅</div>
+      <div class="music-info">
+        <h4>Mission success</h4>
+        <p>Triumphant brass fanfare (3-4s). Major key, punchy, celebratory. Score tally SFX layered over.</p>
+        <div class="music-trigger"><span class="badge badge-green">Trigger: all objectives complete → fade to ambient</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#FFF0F0;">💀</div>
+      <div class="music-info">
+        <h4>Mission fail / death</h4>
+        <p>Descending minor trombone glissando (2s, "wah-wah"). Brief silence, then ambient resumes at hospital.</p>
+        <div class="music-trigger"><span class="badge badge-red">Trigger: player HP = 0 or time expires</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#EDF5FF;">🏁</div>
+      <div class="music-info">
+        <h4>Car radio — in-vehicle</h4>
+        <p>Multiple fictional stations: Classic Rock, Hip-Hop, Electronic, Latin. Each car has a random starting station. Player cycles with R key. Diegetic — fades when exiting car.</p>
+        <div class="music-trigger"><span class="badge badge-blue">Trigger: player enters vehicle → cross-fade ambient to radio</span></div>
+      </div>
+    </div>
+
+    <div class="music-row">
+      <div class="music-icon" style="background:#F5F0FF;">🏙️</div>
+      <div class="music-info">
+        <h4>Night / district themes</h4>
+        <p>Each map zone has its own ambient variant: docks = dark jazz, suburbs = soft synthwave, downtown = bustling latin, industrial = mechanical drone. Cross-fade on zone entry.</p>
+        <div class="music-trigger"><span class="badge badge-gray">Trigger: player enters zone boundary</span></div>
+      </div>
+    </div>
+
+    <div class="section-title" style="margin-top:16px;">Music system implementation</div>
+    <div class="cards">
+      <div class="card">
+        <h4>Audio layers</h4>
+        <p>3 simultaneous audio channels: <strong>ambient</strong> (looping background), <strong>music</strong> (situation track), <strong>sfx</strong> (effects pool). Cross-fade between music states over 1-2s using Web Audio API gain nodes.</p>
+      </div>
+      <div class="card">
+        <h4>State machine</h4>
+        <p>MusicManager has states: CALM → MISSION → COMBAT → CHASE_LOW → CHASE_HIGH → SUCCESS → FAIL. Priority order ensures combat overrides chase, chase overrides calm.</p>
+      </div>
+      <div class="card">
+        <h4>Dynamic intensity</h4>
+        <p>Combat track adds/removes stems (drums, bass, lead) based on enemy count nearby. More enemies = fuller mix. Uses looping segments that can be muted/unmuted seamlessly.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- CODE -->
+  <div id="panel-code" class="panel">
+    <div class="section-title">Recommended tech stack</div>
+    <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;">
+      <span class="badge badge-blue">Phaser 3 (renderer + physics)</span>
+      <span class="badge badge-green">Matter.js (rigid body physics)</span>
+      <span class="badge badge-amber">Web Audio API (adaptive music)</span>
+      <span class="badge badge-gray">Tiled (map editor)</span>
+      <span class="badge badge-gray">TypeScript</span>
+      <span class="badge badge-gray">Webpack / Vite</span>
+    </div>
+
+    <div class="section-title">Vehicle class</div>
+    <div class="code"><span class="kw">class</span> Vehicle <span class="kw">extends</span> Entity {
+  vx = <span class="st">0</span>; vy = <span class="st">0</span>; angle = <span class="st">0</span>;        <span class="cm">// physics state</span>
+  driver = <span class="kw">null</span>;                           <span class="cm">// Human | null</span>
+  speed; armor; handling; maxSpeed;
+
+  update(dt) {
+    <span class="kw">if</span> (!<span class="kw">this</span>.driver) { <span class="kw">this</span>.applyFriction(dt); <span class="kw">return</span>; }
+    <span class="kw">const</span> input = <span class="kw">this</span>.driver.getInput();
+    <span class="kw">this</span>.angle += input.steer * <span class="kw">this</span>.handling * dt;
+    <span class="kw">const</span> accel = input.throttle * <span class="kw">this</span>.speed;
+    <span class="kw">this</span>.vx += Math.cos(<span class="kw">this</span>.angle) * accel * dt;
+    <span class="kw">this</span>.vy += Math.sin(<span class="kw">this</span>.angle) * accel * dt;
+    <span class="kw">this</span>.clampSpeed(<span class="kw">this</span>.maxSpeed);
+    <span class="kw">this</span>.applyFriction(dt);
+    <span class="kw">this</span>.x += <span class="kw">this</span>.vx * dt;
+    <span class="kw">this</span>.y += <span class="kw">this</span>.vy * dt;
+  }
+
+  onCollision(other, impulse) {
+    <span class="kw">const</span> dmg = impulse * <span class="st">0.1</span>;
+    <span class="kw">this</span>.hp -= dmg;
+    <span class="kw">if</span> (other <span class="kw">instanceof</span> Human) other.takeDamage(dmg * <span class="st">2</span>);
+    SFX.play(<span class="st">'crash'</span>, { volume: impulse / <span class="st">500</span> });
+  }
+
+  tryEnter(human) {             <span class="cm">// carjacking</span>
+    <span class="kw">if</span> (<span class="kw">this</span>.driver) <span class="kw">this</span>.ejectDriver();
+    <span class="kw">this</span>.driver = human;
+    human.vehicle = <span class="kw">this</span>;
+    EventBus.emit(<span class="st">'car:enter'</span>, <span class="kw">this</span>);
+  }
+}</div>
+
+    <div class="section-title">Human / police AI state machine</div>
+    <div class="code"><span class="kw">const</span> HumanState = {
+  WANDER: <span class="st">'wander'</span>, FLEE: <span class="st">'flee'</span>,
+  PATROL: <span class="st">'patrol'</span>, CHASE: <span class="st">'chase'</span>,
+  ATTACK: <span class="st">'attack'</span>, ARREST: <span class="st">'arrest'</span>
+};
+
+<span class="kw">class</span> PoliceOfficer <span class="kw">extends</span> Human {
+  update(dt) {
+    <span class="kw">const</span> dist = distance(<span class="kw">this</span>, game.player);
+    <span class="kw">switch</span> (<span class="kw">this</span>.state) {
+      <span class="kw">case</span> HumanState.PATROL:
+        <span class="kw">if</span> (dist < <span class="st">200</span> && game.wanted > <span class="st">0</span>)
+          <span class="kw">this</span>.setState(HumanState.CHASE);
+        <span class="kw">break</span>;
+      <span class="kw">case</span> HumanState.CHASE:
+        <span class="kw">this</span>.moveToward(game.player, dt);
+        <span class="kw">if</span> (dist < <span class="st">30</span>) <span class="kw">this</span>.setState(HumanState.ARREST);
+        <span class="kw">if</span> (dist > <span class="st">400</span>) <span class="kw">this</span>.setState(HumanState.PATROL);
+        <span class="kw">break</span>;
+      <span class="kw">case</span> HumanState.ARREST:
+        game.bustPlayer();   <span class="cm">// lose weapons, pay fine</span>
+        <span class="kw">break</span>;
+    }
+  }
+}</div>
+
+    <div class="section-title">Mission system</div>
+    <div class="code"><span class="kw">class</span> Mission {
+  objectives = [];      <span class="cm">// Objective[]</span>
+  currentIdx = <span class="st">0</span>;
+
+  update() {
+    <span class="kw">const</span> obj = <span class="kw">this</span>.objectives[<span class="kw">this</span>.currentIdx];
+    obj.update();
+    <span class="kw">if</span> (obj.isComplete()) {
+      <span class="kw">this</span>.currentIdx++;
+      <span class="kw">if</span> (<span class="kw">this</span>.currentIdx >= <span class="kw">this</span>.objectives.length)
+        <span class="kw">this</span>.onSuccess();
+    }
+    <span class="kw">if</span> (obj.isFailed()) <span class="kw">this</span>.onFail();
+  }
+}
+
+<span class="kw">class</span> ReachCheckpoint <span class="kw">extends</span> Objective {
+  isComplete() {
+    <span class="kw">return</span> distance(game.player, <span class="kw">this</span>.zone) < <span class="kw">this</span>.zone.radius;
+  }
+}
+
+<span class="kw">class</span> DestroyTarget <span class="kw">extends</span> Objective {
+  isComplete() { <span class="kw">return</span> <span class="kw">this</span>.target.hp <= <span class="st">0</span>; }
+}</div>
+  </div>
+
+  <!-- MAPS -->
+  <div id="panel-maps" class="panel">
+    <div class="section-title">Level progression</div>
+    <div class="map-grid">
+      <div class="map-card" onclick="sendPrompt('How should I design level 1 downtown for a GTA-style game?')">
+        <h4>🏙️ Level 1 — Downtown</h4>
+        <p>Dense streets, few alleys. 3 missions. Light police presence. Tutorial zone. ↗</p>
+        <div style="margin-top:6px;"><span class="badge badge-green">Starter</span><span class="badge badge-gray">Day</span></div>
+      </div>
+      <div class="map-card" onclick="sendPrompt('How should I design the docks level for a GTA-style game?')">
+        <h4>🚢 Level 2 — Docks</h4>
+        <p>Warehouses, cranes, water. Smuggling missions. Police + gang enemies. ↗</p>
+        <div style="margin-top:6px;"><span class="badge badge-blue">Medium</span><span class="badge badge-gray">Dusk</span></div>
+      </div>
+      <div class="map-card" onclick="sendPrompt('How should I design the industrial zone level for a GTA-style game?')">
+        <h4>🏭 Level 3 — Industrial</h4>
+        <p>Factories, rail yards, open roads. Vehicle theft missions. Longer chases. ↗</p>
+        <div style="margin-top:6px;"><span class="badge badge-amber">Hard</span><span class="badge badge-gray">Night</span></div>
+      </div>
+      <div class="map-card" onclick="sendPrompt('How should I design the suburbs level for a GTA-style game?')">
+        <h4>🌳 Level 4 — Suburbs</h4>
+        <p>Wide roads, parks, rich district. High-value targets. SWAT response. ↗</p>
+        <div style="margin-top:6px;"><span class="badge badge-amber">Hard</span><span class="badge badge-gray">Day</span></div>
+      </div>
+      <div class="map-card" onclick="sendPrompt('How should I design the highway and airport level for a GTA-style game?')">
+        <h4>✈️ Level 5 — Airport</h4>
+        <p>Runways, terminals, open straights. High-speed pursuits. Helicopter police. ↗</p>
+        <div style="margin-top:6px;"><span class="badge badge-red">Elite</span><span class="badge badge-gray">Night</span></div>
+      </div>
+      <div class="map-card" onclick="sendPrompt('How should I design the final city level for a GTA-style game?')">
+        <h4>🌃 Level 6 — Full city</h4>
+        <p>All districts connected. Free-roam endgame. Max police, all gangs. ↗</p>
+        <div style="margin-top:6px;"><span class="badge badge-red">Endgame</span><span class="badge badge-gray">Dynamic</span></div>
+      </div>
+    </div>
+
+    <div class="section-title">Map technical setup</div>
+    <div class="cards">
+      <div class="card">
+        <h4>Tile map</h4>
+        <p>Tiled editor, 16×16 or 32×32 tiles. Layers: ground, roads, buildings (solid), props, colliders. Export as JSON, load with Phaser.Tilemaps.</p>
+      </div>
+      <div class="card">
+        <h4>Zone system</h4>
+        <p>Each map divided into named zones (rectangles). Zone entry/exit triggers ambient music swap, police density change, gang territory behavior.</p>
+      </div>
+      <div class="card">
+        <h4>Traffic & pedestrians</h4>
+        <p>Spawn pool: max 20 cars + 30 peds per level. Despawn when 600px+ from player. Road spline system channels AI vehicles to stay in lanes.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- POLICE -->
+  <div id="panel-police" class="panel">
+    <div class="section-title">Wanted star system</div>
+
+    <div id="wanted-display" style="margin-bottom:16px;">
+      <div class="wanted"><span class="star on">★</span><span class="star off">★</span><span class="star off">★</span><span class="star off">★</span><span class="star off">★</span><span class="wanted-desc">1 star — Patrol cars notice you. 1-2 officers respond.</span></div>
+      <div class="wanted"><span class="star on">★</span><span class="star on">★</span><span class="star off">★</span><span class="star off">★</span><span class="star off">★</span><span class="wanted-desc">2 stars — Roadblocks appear. Officers on foot pursue.</span></div>
+      <div class="wanted"><span class="star on">★</span><span class="star on">★</span><span class="star on">★</span><span class="star off">★</span><span class="star off">★</span><span class="wanted-desc">3 stars — SWAT vans. Helicopters scan area. Armed pursuit.</span></div>
+      <div class="wanted"><span class="star on">★</span><span class="star on">★</span><span class="star on">★</span><span class="star on">★</span><span class="star off">★</span><span class="wanted-desc">4 stars — FBI vehicles. Spike strips on roads. Snipers.</span></div>
+      <div class="wanted"><span class="star on">★</span><span class="star on">★</span><span class="star on">★</span><span class="star on">★</span><span class="star on">★</span><span class="wanted-desc">5 stars — Military. Tanks. Unlimited pursuit. No mercy.</span></div>
+    </div>
+
+    <div class="section-title">Wanted triggers (what raises stars)</div>
+    <div class="cards">
+      <div class="card">
+        <h4>+1 star actions</h4>
+        <ul>
+          <li>Shooting a weapon in public</li>
+          <li>Crashing into a police car</li>
+          <li>Running over a pedestrian</li>
+          <li>Stealing a car (if witnessed)</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>+2 star actions</h4>
+        <ul>
+          <li>Killing a civilian</li>
+          <li>Destroying a police vehicle</li>
+          <li>Assaulting an officer</li>
+          <li>Running a major roadblock</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>+3-5 star actions</h4>
+        <ul>
+          <li>Killing a police officer</li>
+          <li>Bombing a building</li>
+          <li>Multiple officer kills</li>
+          <li>Entering restricted zone at 3+</li>
+        </ul>
+      </div>
+      <div class="card">
+        <h4>Losing wanted level</h4>
+        <ul>
+          <li>Hide in alley, no LOS for 10s</li>
+          <li>Paint-n-spray garage visit</li>
+          <li>Collect "police bribe" pickup</li>
+          <li>Evade for 60s continuously</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="section-title">Police AI behavior</div>
+    <div class="flow" style="flex-direction:column;align-items:flex-start;">
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div class="flow-node">Last known position</div><div class="flow-arrow">→</div><div class="flow-node">Dispatch nearest unit</div><div class="flow-arrow">→</div><div class="flow-node">Converge + intercept path</div></div>
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;"><div class="flow-node">Line of sight lost</div><div class="flow-arrow">→</div><div class="flow-node">Search pattern (grid sweep)</div><div class="flow-arrow">→</div><div class="flow-node">30s timer → give up</div></div>
+      <div style="display:flex;align-items:center;gap:8px;"><div class="flow-node">Player re-spotted</div><div class="flow-arrow">→</div><div class="flow-node">Timer resets</div><div class="flow-arrow">→</div><div class="flow-node">Call backup (+1 star)</div></div>
+    </div>
+  </div>
+
+  <!-- GARAGE -->
+  <div id="panel-garage" class="panel">
+    <div class="section-title">Upgrade categories</div>
+    <table class="upgrade">
+      <tr><th>Category</th><th>Tier 1 (cheap)</th><th>Tier 2</th><th>Tier 3 (expensive)</th></tr>
+      <tr>
+        <td><strong>Engine</strong></td>
+        <td>+10% top speed<br><span style="color:var(--color-text-tertiary);">$500</span></td>
+        <td>+25% speed, faster accel<br><span style="color:var(--color-text-tertiary);">$1,500</span></td>
+        <td>Nitro boost available<br><span style="color:var(--color-text-tertiary);">$4,000</span></td>
+      </tr>
+      <tr>
+        <td><strong>Armor</strong></td>
+        <td>+25 HP, ramming resistant<br><span style="color:var(--color-text-tertiary);">$600</span></td>
+        <td>+60 HP, bullet resistant<br><span style="color:var(--color-text-tertiary);">$2,000</span></td>
+        <td>+150 HP, explosion resist<br><span style="color:var(--color-text-tertiary);">$5,000</span></td>
+      </tr>
+      <tr>
+        <td><strong>Handling</strong></td>
+        <td>Better turn radius<br><span style="color:var(--color-text-tertiary);">$400</span></td>
+        <td>Drift control, 4WD<br><span style="color:var(--color-text-tertiary);">$1,200</span></td>
+        <td>Racing suspension, no skid<br><span style="color:var(--color-text-tertiary);">$3,500</span></td>
+      </tr>
+      <tr>
+        <td><strong>Weapons (car)</strong></td>
+        <td>Front-mounted machine gun<br><span style="color:var(--color-text-tertiary);">$1,000</span></td>
+        <td>Side oil slick / spike drop<br><span style="color:var(--color-text-tertiary);">$2,500</span></td>
+        <td>Rear rocket launcher<br><span style="color:var(--color-text-tertiary);">$8,000</span></td>
+      </tr>
+      <tr>
+        <td><strong>Stealth</strong></td>
+        <td>Fake plates (lose 1 star)<br><span style="color:var(--color-text-tertiary);">$800</span></td>
+        <td>Police scanner (warn early)<br><span style="color:var(--color-text-tertiary);">$1,800</span></td>
+        <td>Paint-n-spray on demand<br><span style="color:var(--color-text-tertiary);">$6,000</span></td>
+      </tr>
+    </table>
+
+    <div class="section-title">Garage services</div>
+    <div class="cards">
+      <div class="card">
+        <h4>🔧 Repair</h4>
+        <p>Restore car HP to 100%. Cost scales with damage level. Free if fully undamaged.</p>
+      </div>
+      <div class="card">
+        <h4>🎨 Respray</h4>
+        <p>Change car color. Removes 1-2 wanted stars if police searching for that car color. Cost: $200.</p>
+      </div>
+      <div class="card">
+        <h4>🚗 Car storage</h4>
+        <p>Store up to 3 vehicles. Retrieve any time. Upgraded cars persist between missions.</p>
+      </div>
+      <div class="card">
+        <h4>💊 Ammo shop</h4>
+        <p>Buy ammo for owned weapons. Restock grenade / RPG supply. Unlocks after mission 3.</p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+function show(id) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.getElementById('panel-' + id).classList.add('active');
+  event.target.classList.add('active');
+}
+</script>
