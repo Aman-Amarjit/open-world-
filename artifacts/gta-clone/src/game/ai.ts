@@ -386,22 +386,58 @@ function updatePedestrian(
 
 function pickSidewalkPath(h: Human, world: WorldData) {
   if (world.sidewalkNodes.length === 0) return;
-  // Pick a sidewalk node within ~250 px
+  // Pick a NEARBY sidewalk node (was 60-400, now 50-180 so we don't pick
+  // targets clear across a road — that's what made peds path through the
+  // middle of the street). Closer targets keep them on the same sidewalk
+  // strip; road crossings happen via crosswalks at intersections.
   const candidates: { x: number; y: number }[] = [];
-  // Sample 30 random nodes for cheap selection
   for (let i = 0; i < 30; i++) {
     const n = world.sidewalkNodes[Math.floor(Math.random() * world.sidewalkNodes.length)]!;
     const d = dist(n.x, n.y, h.x, h.y);
-    if (d > 60 && d < 400) candidates.push(n);
+    if (d > 50 && d < 180) candidates.push(n);
   }
   if (candidates.length === 0) return;
-  const tgt = candidates[Math.floor(Math.random() * candidates.length)]!;
-  // Build a short path: just direct line, with one optional waypoint to look natural
-  const mid = {
-    x: (h.x + tgt.x) / 2 + rand(-30, 30),
-    y: (h.y + tgt.y) / 2 + rand(-30, 30),
+  // Of the nearby candidates, prefer one whose straight-line path stays on
+  // walkable terrain (sidewalk/plaza/grass/crosswalk). This filters out
+  // targets on the opposite side of a road that would force the ped to
+  // jaywalk diagonally.
+  const isWalkable = (tx: number, ty: number) => {
+    const t = tileAt(world, tx, ty);
+    if (!t) return false;
+    return (
+      t.type === "sidewalk" ||
+      t.type === "plaza" ||
+      t.type === "grass" ||
+      t.type === "crosswalk"
+    );
   };
-  h.aiPath = [mid, tgt];
+  const sampleSegmentOk = (ax: number, ay: number, bx: number, by: number) => {
+    const segDist = Math.hypot(bx - ax, by - ay);
+    const steps = Math.max(2, Math.floor(segDist / 14));
+    for (let s = 1; s < steps; s++) {
+      const t = s / steps;
+      if (!isWalkable(ax + (bx - ax) * t, ay + (by - ay) * t)) return false;
+    }
+    return true;
+  };
+  // Pick the first candidate whose direct path is fully walkable; if none,
+  // fall back to the nearest candidate so they don't get stuck.
+  let tgt = candidates[0]!;
+  for (const c of candidates) {
+    if (sampleSegmentOk(h.x, h.y, c.x, c.y)) {
+      tgt = c;
+      break;
+    }
+  }
+  // Mid waypoint adds slight wobble — but only if it lands on walkable
+  // ground (otherwise the ped detours into the street).
+  const mx = (h.x + tgt.x) / 2 + rand(-20, 20);
+  const my = (h.y + tgt.y) / 2 + rand(-20, 20);
+  if (isWalkable(mx, my)) {
+    h.aiPath = [{ x: mx, y: my }, tgt];
+  } else {
+    h.aiPath = [tgt];
+  }
 }
 
 function nearestCop(state: GameState, from: Human): Human | null {
