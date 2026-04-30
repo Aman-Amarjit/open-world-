@@ -313,9 +313,13 @@ export function tick(game: Game, dt: number) {
   // Damage flash decay
   if (state.damageFlash > 0) state.damageFlash = Math.max(0, state.damageFlash - dt * 2);
 
-  // Player car-hit i-frame countdown
-  if (state.player.hitCooldown > 0) {
-    state.player.hitCooldown = Math.max(0, state.player.hitCooldown - dt);
+  // Per-human car-hit i-frame countdown (player + every NPC). Without this,
+  // any human that ever got brushed by a car would stay at hitCooldown=0.4
+  // forever and become invulnerable to traffic.
+  for (const h of state.humans) {
+    if (h.hitCooldown > 0) {
+      h.hitCooldown = Math.max(0, h.hitCooldown - dt);
+    }
   }
 
   // ---- TRAFFIC SIGNAL PHASE ----

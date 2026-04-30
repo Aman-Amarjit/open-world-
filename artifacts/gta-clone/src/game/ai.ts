@@ -15,8 +15,11 @@ const PED_VIEW = 220;
 const PED_HEAR = 200;
 const GUN_RANGE = 280;
 const COP_GUN_RANGE = 320;
-const SWERVE_DETECT = 70; // peds dodge cars within this distance heading at them
-const CAR_FRONT_SENSOR = 90; // car looks ahead this much
+// Peaceful coexistence: peds notice oncoming cars further out and dodge with
+// a wider acceptance cone (was 70 / fwdDot 0.5). Cars also look further
+// ahead for peds (see ped scan below).
+const SWERVE_DETECT = 110;
+const CAR_FRONT_SENSOR = 90; // car looks ahead this much for OTHER VEHICLES
 const LANE_OFFSET = 8; // right-side lane offset from intersection center
 const GAWK_RANGE = 90; // peds will gawk at corpses within this radius
 const GANG_BACKUP_RANGE = 260; // a wounded/firing gang summons others in this radius
@@ -292,14 +295,15 @@ function updatePedestrian(
   // ---- DODGE oncoming cars ----------------------------------------------
   for (const v of state.vehicles) {
     const sp = Math.hypot(v.vx, v.vy);
-    if (sp < 40) continue;
+    if (sp < 30) continue; // even slow-moving cars are noticed now
     const dx = h.x - v.x;
     const dy = h.y - v.y;
     const d = Math.hypot(dx, dy);
     if (d > SWERVE_DETECT) continue;
-    // Is the ped roughly in front of the car?
+    // Is the ped roughly in front of the car? Wider acceptance cone (0.35
+    // ~= 70°) so peds dodge cars approaching at an angle, not just dead-on.
     const fwdDot = (dx * v.vx + dy * v.vy) / (sp * (d || 1));
-    if (fwdDot < 0.5) continue;
+    if (fwdDot < 0.35) continue;
     // Sidestep perpendicular to car velocity
     const px = -v.vy / sp;
     const py = v.vx / sp;
@@ -962,15 +966,18 @@ function driveCivilian(
     const dot = (dx * fwdX + dy * fwdY) / (d || 1);
     if (dot > 0.85 && d < frontObstacle) frontObstacle = d;
   }
+  // Cars now scan further ahead for pedestrians (was 60px / cone 0.7) so
+  // they brake politely instead of running peds over. Wider cone catches
+  // peds that are crossing diagonally, not just walking dead-ahead.
   for (const ped of state.humans) {
     if (ped.inVehicle) continue;
     if (ped.hp <= 0) continue;
     const dx = ped.x - v.x;
     const dy = ped.y - v.y;
     const d = Math.hypot(dx, dy);
-    if (d > 60) continue;
+    if (d > 95) continue;
     const dot = (dx * fwdX + dy * fwdY) / (d || 1);
-    if (dot > 0.7 && d < frontObstacle) frontObstacle = d;
+    if (dot > 0.5 && d < frontObstacle) frontObstacle = d;
   }
   if (frontObstacle < 30) {
     throttle = 0;

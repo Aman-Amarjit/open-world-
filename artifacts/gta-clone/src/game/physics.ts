@@ -540,7 +540,11 @@ export function vehicleVsHuman(state: GameState) {
       const ly = dx * s + dy * c;
       if (Math.abs(lx) > hl || Math.abs(ly) > hw) continue;
 
-      if (sp > 30) {
+      // Coexistence threshold: vehicles only damage humans if moving fast
+      // enough to be a real impact (was sp > 30, which lethally crushed peds
+      // at parking-lot speeds). Below this, we just push the ped out of the
+      // way — the same handling stationary cars used to get.
+      if (sp > 55) {
         // Damage scaling — vehicles used to deal `sp * 0.4 * mass` which at
         // typical city speeds (sp ~ 150, mass ~ 2) one-shot the 100-HP player
         // on a single brush. Use a much gentler curve for the player and
@@ -564,15 +568,28 @@ export function vehicleVsHuman(state: GameState) {
             h.vy = v.vy * 0.4;
           }
         } else {
-          h.hp -= sp * 0.4 * v.mass;
-          h.vx = v.vx * 0.5;
-          h.vy = v.vy * 0.5;
-          spawnBlood(state, h.x, h.y);
-          if (h.hp <= 0) {
-            if (v.driver?.isPlayer) {
-              addScore(state, 100, "Roadkill +100");
-              raiseWanted(state, h.kind === "police" ? 2 : 1);
+          // NPC damage curve: subtract a 55-px threshold so brushes are
+          // forgiving, then scale linearly by (sp-55)*mass*0.35. A car at
+          // sp=120 mass=2 still deals ~46 dmg (kills in two), while a slow
+          // bump at sp=60 mass=2 deals ~3.5 dmg. Keeps deliberate roadkill
+          // viable while ending the "drive past = mass casualty" problem.
+          if (h.hitCooldown <= 0) {
+            const dmg = (sp - 55) * 0.35 * v.mass;
+            h.hp -= dmg;
+            h.vx = v.vx * 0.5;
+            h.vy = v.vy * 0.5;
+            h.hitCooldown = 0.4;
+            spawnBlood(state, h.x, h.y);
+            if (h.hp <= 0) {
+              if (v.driver?.isPlayer) {
+                addScore(state, 100, "Roadkill +100");
+                raiseWanted(state, h.kind === "police" ? 2 : 1);
+              }
             }
+          } else {
+            // Within i-frame: just shove them aside, no extra damage.
+            h.vx = v.vx * 0.4;
+            h.vy = v.vy * 0.4;
           }
         }
       } else {
