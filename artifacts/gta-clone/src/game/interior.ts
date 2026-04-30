@@ -36,7 +36,18 @@ export type InteriorPropKind =
   | "fluorescentLight"
   | "doormat"
   | "stack"
-  | "pillar";
+  | "pillar"
+  // Safehouse-specific props
+  | "nightstand"
+  | "wardrobe"
+  | "bookshelf"
+  | "floorLamp"
+  | "picture"
+  | "window"
+  | "coffeeTable"
+  | "kitchenette"
+  | "clock"
+  | "rugRound";
 
 export interface InteriorProp {
   kind: InteriorPropKind;
@@ -86,6 +97,9 @@ export interface Interior {
   floorAccent: string;
   wallColor: string;
   wallTrim: string;
+  // Optional style overrides per interior. Defaults are used when undefined.
+  floorStyle?: "checker" | "wood" | "carpet";
+  wallStyle?: "flat" | "wallpaper" | "wainscot";
   // collision rectangles (in addition to the room walls)
   walls: { x: number; y: number; w: number; h: number }[];
   // decorative + collidable props
@@ -355,33 +369,62 @@ function decorFood(ir: Interior) {
 }
 
 function decorSafehouse(ir: Interior) {
-  ir.floorColor = "#9a7a5a";
-  ir.floorAccent = "#6a4a2a";
-  ir.wallColor = "#c8b89a";
-  ir.wallTrim = "#7a5a3a";
+  // Warm "studio apartment" palette — oak wood floor, cream wallpaper, walnut trim.
+  ir.floorColor = "#a07a48";       // warm oak base
+  ir.floorAccent = "#7a5a30";      // darker plank seam
+  ir.wallColor = "#dfd2b3";        // cream plaster
+  ir.wallTrim = "#5a3a1f";         // walnut baseboard
+  ir.floorStyle = "wood";
+  ir.wallStyle = "wallpaper";
   ir.interact.label = "BED — sleep / save spawn (full heal)";
 
-  // Cozy bed in the back
-  ir.props.push({ kind: "bed", x: ROOM_W / 2 - 28, y: WALL_THICK + 20, w: 56, h: 36, solid: true, color: "#a04030", variant: 0 });
-  // Couch + TV
-  ir.props.push({ kind: "couch", x: ROOM_W / 2 - 50, y: ROOM_H - 90, w: 100, h: 28, solid: true, color: "#5a4030" });
-  ir.props.push({ kind: "tv", x: ROOM_W / 2 - 18, y: ROOM_H - 130, w: 36, h: 22, solid: true });
-  ir.props.push({ kind: "rug", x: ROOM_W / 2 - 60, y: ROOM_H - 170, w: 120, h: 70, color: "#c8a060" });
+  // ── BED ZONE (top-left) ────────────────────────────────────────────────
+  // Queen bed with headboard against the north wall
+  ir.props.push({ kind: "bed", x: 36, y: WALL_THICK + 8, w: 60, h: 42, solid: true, color: "#3a5a8a", variant: 1 });
+  // Nightstand with alarm clock + lamp
+  ir.props.push({ kind: "nightstand", x: 100, y: WALL_THICK + 14, w: 18, h: 20, solid: true, color: "#6a4525" });
+  ir.props.push({ kind: "clock", x: 102, y: WALL_THICK + 16, w: 10, h: 6 });
+  ir.props.push({ kind: "deskLamp", x: 105, y: WALL_THICK + 24, w: 8, h: 10 });
+  // Tall wardrobe in the corner
+  ir.props.push({ kind: "wardrobe", x: ROOM_W - 50, y: WALL_THICK + 8, w: 38, h: 30, solid: true, color: "#5a3a1f" });
+  // Window with curtains, centered above bed area on north wall
+  ir.props.push({ kind: "window", x: 38, y: 1, w: 56, h: WALL_THICK - 2 });
+  // Framed picture between bed-zone and wardrobe
+  ir.props.push({ kind: "picture", x: 150, y: 2, w: 22, h: WALL_THICK - 4, color: "#3a78a8" });
+  ir.props.push({ kind: "picture", x: 200, y: 2, w: 22, h: WALL_THICK - 4, color: "#a04030" });
 
-  // Side table & lamp
-  ir.props.push({ kind: "table", x: 40, y: 90, w: 26, h: 26, solid: true, color: "#8a5a3a" });
-  ir.props.push({ kind: "deskLamp", x: 50, y: 92, w: 8, h: 12 });
-  // Plants
-  ir.props.push({ kind: "plantPot", x: ROOM_W - 50, y: 90, w: 16, h: 18, solid: true });
-  ir.props.push({ kind: "plantPot", x: 28, y: ROOM_H - 50, w: 16, h: 18, solid: true });
+  // ── LIVING ZONE (south, in front of TV) ────────────────────────────────
+  // Round area rug under the seating
+  ir.props.push({ kind: "rug", x: ROOM_W / 2 - 70, y: ROOM_H - 180, w: 140, h: 86, color: "#a05a30" });
+  // Couch facing the TV (south wall)
+  ir.props.push({ kind: "couch", x: ROOM_W / 2 - 60, y: ROOM_H - 96, w: 120, h: 30, solid: true, color: "#3a5538" });
+  // Coffee table in front of couch
+  ir.props.push({ kind: "coffeeTable", x: ROOM_W / 2 - 26, y: ROOM_H - 134, w: 52, h: 22, solid: true, color: "#5a3a1f" });
+  // Wall-mounted flatscreen above the south… we'll put it against west to avoid covering door area
+  ir.props.push({ kind: "tv", x: ROOM_W / 2 - 22, y: ROOM_H - 168, w: 44, h: 26, solid: true });
+  // Floor lamp tucked next to couch
+  ir.props.push({ kind: "floorLamp", x: ROOM_W / 2 + 64, y: ROOM_H - 110, w: 10, h: 30, solid: true });
 
-  // Doormat
-  ir.props.push({ kind: "doormat", x: ROOM_W / 2 - 28, y: ROOM_H - WALL_THICK - 16, w: 56, h: 14, color: "#5a4030" });
+  // ── KITCHENETTE (right side) ───────────────────────────────────────────
+  ir.props.push({ kind: "kitchenette", x: ROOM_W - 70, y: 70, w: 56, h: 42, solid: true, color: "#9a8a70" });
+  ir.props.push({ kind: "fridge", x: ROOM_W - 28, y: 60, w: 16, h: 30, solid: true });
+
+  // ── OFFICE / READING NOOK (left side) ──────────────────────────────────
+  ir.props.push({ kind: "bookshelf", x: 14, y: 80, w: 22, h: 60, solid: true, color: "#5a3a1f" });
+  ir.props.push({ kind: "table", x: 14, y: 150, w: 28, h: 22, solid: true, color: "#6a4525" });
+  ir.props.push({ kind: "chair", x: 22, y: 174, w: 14, h: 14, solid: true, color: "#3a5538" });
+
+  // ── PLANTS for life ───────────────────────────────────────────────────
+  ir.props.push({ kind: "plantPot", x: 18, y: ROOM_H - 50, w: 18, h: 22, solid: true });
+  ir.props.push({ kind: "plantPot", x: ROOM_W - 36, y: ROOM_H - 50, w: 18, h: 22, solid: true });
+
+  // ── ENTRY MAT + interaction ────────────────────────────────────────────
+  ir.props.push({ kind: "doormat", x: ROOM_W / 2 - 28, y: ROOM_H - WALL_THICK - 16, w: 56, h: 14, color: "#3a2a1c" });
   // Move interact zone over the bed
-  ir.interact.x = ROOM_W / 2 - 30;
-  ir.interact.y = WALL_THICK + 24;
+  ir.interact.x = 38;
+  ir.interact.y = WALL_THICK + 12;
   ir.interact.w = 60;
-  ir.interact.h = 40;
+  ir.interact.h = 42;
 }
 
 function decorGarage(ir: Interior) {
@@ -739,15 +782,25 @@ export function renderInterior(
       // already grouped — but draw them earlier
     }
   }
-  // Draw "background" props first (rug, doormat, lights, signs)
+  // Draw "background" props first (rugs, doormat, plus wall-mounted decor that
+  // hangs flush on the north wall — picture, window, clock).
   for (const p of ir.props) {
-    if (p.kind === "rug" || p.kind === "doormat") drawProp(ctx, ir, p);
+    if (
+      p.kind === "rug" || p.kind === "rugRound" || p.kind === "doormat" ||
+      p.kind === "picture" || p.kind === "window" || p.kind === "clock"
+    ) {
+      drawProp(ctx, ir, p);
+    }
   }
   // Then collidable props in y-sorted order, mixing player + npcs
   type Drawable = { y: number; draw: () => void };
   const drawables: Drawable[] = [];
   for (const p of ir.props) {
-    if (p.kind === "rug" || p.kind === "doormat" || p.kind === "fluorescentLight" || p.kind === "lockerSign") continue;
+    if (
+      p.kind === "rug" || p.kind === "rugRound" || p.kind === "doormat" ||
+      p.kind === "fluorescentLight" || p.kind === "lockerSign" ||
+      p.kind === "picture" || p.kind === "window" || p.kind === "clock"
+    ) continue;
     drawables.push({ y: p.y + p.h, draw: () => drawProp(ctx, ir, p) });
   }
   for (const n of ir.npcs) {
@@ -837,7 +890,69 @@ export function renderInterior(
 function drawFloor(ctx: CanvasRenderingContext2D, ir: Interior) {
   ctx.fillStyle = ir.floorColor;
   ctx.fillRect(0, 0, ir.width, ir.height);
-  // Checker pattern
+
+  if (ir.floorStyle === "wood") {
+    // Hardwood plank floor — long horizontal planks of varying tone, with
+    // dark seams between rows and short staggered seams along each plank.
+    const plankH = 14;       // plank height
+    const plankLen = 60;     // average plank length
+    const tones = [
+      shadeHex(ir.floorColor, -8),
+      shadeHex(ir.floorColor, 4),
+      shadeHex(ir.floorColor, -4),
+      shadeHex(ir.floorColor, 10),
+    ];
+    let row = 0;
+    for (let y = 0; y < ir.height; y += plankH) {
+      const stagger = (row % 2 === 0 ? 0 : plankLen / 2);
+      let x = -stagger;
+      let plankIdx = 0;
+      while (x < ir.width) {
+        const len = plankLen + ((row * 7 + plankIdx * 13) % 18) - 9; // ±9
+        const tone = tones[(row + plankIdx) % tones.length]!;
+        ctx.fillStyle = tone;
+        ctx.fillRect(x, y, len, plankH);
+        // Wood grain — 1-2 thin darker streaks across the plank
+        ctx.fillStyle = "rgba(0,0,0,0.10)";
+        ctx.fillRect(x + 2, y + 4, len - 4, 0.5);
+        ctx.fillRect(x + 4, y + plankH - 5, len - 8, 0.5);
+        // Knot every few planks
+        if ((row + plankIdx) % 6 === 0) {
+          ctx.fillStyle = "rgba(40,20,10,0.45)";
+          ctx.beginPath();
+          ctx.ellipse(x + len * 0.3, y + plankH / 2, 1.6, 1, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+        // Vertical seam between this plank and the next
+        ctx.fillStyle = ir.floorAccent;
+        ctx.fillRect(x + len - 0.5, y, 1, plankH);
+        x += len;
+        plankIdx++;
+      }
+      // Horizontal seam between rows
+      ctx.fillStyle = ir.floorAccent;
+      ctx.fillRect(0, y + plankH - 0.5, ir.width, 1);
+      row++;
+    }
+    return;
+  }
+
+  if (ir.floorStyle === "carpet") {
+    // Loop-pile carpet — many tiny dots of slightly varied tone
+    const dot = 2;
+    for (let y = 0; y < ir.height; y += dot) {
+      for (let x = 0; x < ir.width; x += dot) {
+        const n = ((x * 73 + y * 19) % 100);
+        if (n < 30) ctx.fillStyle = shadeHex(ir.floorColor, -6);
+        else if (n < 55) ctx.fillStyle = shadeHex(ir.floorColor, 4);
+        else continue;
+        ctx.fillRect(x, y, dot, dot);
+      }
+    }
+    return;
+  }
+
+  // Default — checkerboard tile (offices, shops, hospitals, etc.)
   const tile = 24;
   ctx.fillStyle = ir.floorAccent;
   for (let y = 0; y < ir.height; y += tile) {
@@ -873,7 +988,34 @@ function drawWalls(ctx: CanvasRenderingContext2D, ir: Interior) {
     ir.width - (ir.exit.x + ir.exit.w),
     WALL_THICK,
   );
-  // Wall trim shadow at bottom of each wall (creates depth)
+
+  // Optional wallpaper / texture pass on north wall (most visible).
+  if (ir.wallStyle === "wallpaper") {
+    // Faint vertical stripe wallpaper — alternating tone every 8px
+    const stripeW = 8;
+    ctx.fillStyle = shadeHex(ir.wallColor, -6);
+    for (let x = 2; x < ir.width - 2; x += stripeW * 2) {
+      ctx.fillRect(x, 1, stripeW, WALL_THICK - 4);
+    }
+    // Tiny dot pattern overlay (damask feel)
+    ctx.fillStyle = "rgba(120,80,40,0.18)";
+    for (let x = 6; x < ir.width - 4; x += 6) {
+      for (let y = 3; y < WALL_THICK - 5; y += 4) {
+        ctx.fillRect(x + ((y / 4) % 2) * 3, y, 1, 1);
+      }
+    }
+  } else if (ir.wallStyle === "wainscot") {
+    // Lower half of north wall is darker paneled wainscoting
+    ctx.fillStyle = shadeHex(ir.wallColor, -22);
+    ctx.fillRect(0, WALL_THICK / 2, ir.width, WALL_THICK / 2 - 1);
+    // Vertical panel divisions
+    ctx.fillStyle = shadeHex(ir.wallColor, -38);
+    for (let x = 0; x < ir.width; x += 32) {
+      ctx.fillRect(x, WALL_THICK / 2, 0.6, WALL_THICK / 2 - 1);
+    }
+  }
+
+  // Wall trim / baseboard at the bottom of each wall section (creates depth).
   ctx.fillStyle = ir.wallTrim;
   ctx.fillRect(0, WALL_THICK - 3, ir.width, 3);
   ctx.fillRect(WALL_THICK - 3, 0, 3, ir.height);
@@ -881,14 +1023,22 @@ function drawWalls(ctx: CanvasRenderingContext2D, ir: Interior) {
   ctx.fillRect(0, ir.height - WALL_THICK, ir.exit.x, 3);
   ctx.fillRect(ir.exit.x + ir.exit.w, ir.height - WALL_THICK, ir.width - (ir.exit.x + ir.exit.w), 3);
 
-  // Brick courses on north wall (subtle)
-  ctx.strokeStyle = "rgba(0,0,0,0.15)";
-  ctx.lineWidth = 0.5;
-  for (let y = 2; y < WALL_THICK - 2; y += 3) {
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(ir.width, y);
-    ctx.stroke();
+  // Highlight strip just above the baseboard — a tiny crown-molding hint.
+  if (ir.wallStyle === "wallpaper" || ir.wallStyle === "wainscot") {
+    ctx.fillStyle = shadeHex(ir.wallColor, 18);
+    ctx.fillRect(0, WALL_THICK - 4.5, ir.width, 0.6);
+  }
+
+  // Brick courses on north wall (only for flat / shop interiors, not a home).
+  if (!ir.wallStyle || ir.wallStyle === "flat") {
+    ctx.strokeStyle = "rgba(0,0,0,0.15)";
+    ctx.lineWidth = 0.5;
+    for (let y = 2; y < WALL_THICK - 2; y += 3) {
+      ctx.beginPath();
+      ctx.moveTo(0, y);
+      ctx.lineTo(ir.width, y);
+      ctx.stroke();
+    }
   }
 
   // Outside-the-door dark step (suggests asphalt)
@@ -1043,18 +1193,56 @@ function drawProp(ctx: CanvasRenderingContext2D, ir: Interior, p: InteriorProp) 
       break;
     }
     case "bed": {
-      // mattress
-      ctx.fillStyle = p.color || "#f0f0f5";
-      ctx.fillRect(p.x, p.y, p.w, p.h);
-      // pillow at one end
+      // Variant 1 = home bed (with headboard at top, two pillows). Variant 0 = clinical (legacy).
+      const isHome = p.variant === 1;
+      // Headboard for home bed
+      if (isHome) {
+        ctx.fillStyle = "#5a3a1f";
+        ctx.fillRect(p.x - 1, p.y - 4, p.w + 2, 6);
+        // headboard slats
+        ctx.fillStyle = "#3a2410";
+        for (let i = 0; i < 5; i++) {
+          ctx.fillRect(p.x + 2 + i * (p.w / 5), p.y - 4, 1, 6);
+        }
+        // wood frame around mattress
+        ctx.fillStyle = "#3a2410";
+        ctx.fillRect(p.x - 1, p.y, p.w + 2, p.h);
+      }
+      // Mattress (sits inside frame)
+      const mInset = isHome ? 2 : 0;
+      ctx.fillStyle = "#f4ece0";
+      ctx.fillRect(p.x + mInset, p.y + mInset, p.w - mInset * 2, p.h - mInset * 2);
+      // Comforter / blanket — covers lower 2/3
+      const blanketColor = p.color || "#a04030";
+      ctx.fillStyle = blanketColor;
+      const bY = p.y + (isHome ? 16 : 4);
+      ctx.fillRect(p.x + mInset, bY, p.w - mInset * 2, p.h - (bY - p.y) - mInset);
+      // Comforter darker fold line at top
+      ctx.fillStyle = shadeHex(blanketColor, -22);
+      ctx.fillRect(p.x + mInset, bY, p.w - mInset * 2, 1.5);
+      // Quilted stitch pattern on blanket
+      ctx.fillStyle = shadeHex(blanketColor, -10);
+      for (let qy = bY + 4; qy < p.y + p.h - 2; qy += 6) {
+        for (let qx = p.x + mInset + 4; qx < p.x + p.w - mInset - 2; qx += 6) {
+          ctx.fillRect(qx, qy, 0.6, 0.6);
+        }
+      }
+      // Pillows at top
       ctx.fillStyle = "#ffffff";
-      ctx.fillRect(p.x + 4, p.y + 4, 16, 10);
-      // blanket
-      ctx.fillStyle = shadeHex(p.color || "#a04030", -20);
-      ctx.fillRect(p.x + 22, p.y + 4, p.w - 26, p.h - 8);
-      // frame
-      ctx.strokeStyle = "rgba(0,0,0,0.4)";
-      ctx.lineWidth = 1;
+      if (isHome) {
+        const pw = (p.w - mInset * 2 - 6) / 2;
+        ctx.fillRect(p.x + mInset + 2, p.y + mInset + 2, pw, 12);
+        ctx.fillRect(p.x + mInset + 4 + pw, p.y + mInset + 2, pw, 12);
+        // pillow shadows
+        ctx.fillStyle = "rgba(0,0,0,0.12)";
+        ctx.fillRect(p.x + mInset + 2, p.y + mInset + 13, pw, 1);
+        ctx.fillRect(p.x + mInset + 4 + pw, p.y + mInset + 13, pw, 1);
+      } else {
+        ctx.fillRect(p.x + 4, p.y + 4, 16, 10);
+      }
+      // Subtle outline
+      ctx.strokeStyle = "rgba(0,0,0,0.35)";
+      ctx.lineWidth = 0.5;
       ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
       break;
     }
@@ -1179,18 +1367,81 @@ function drawProp(ctx: CanvasRenderingContext2D, ir: Interior, p: InteriorProp) 
       break;
     }
     case "rug": {
-      ctx.fillStyle = p.color || "#c8a060";
+      // Persian-style area rug — colored field, dark border, central medallion,
+      // corner accents, fringe at top & bottom.
+      const base = p.color || "#a05a30";
+      const border = shadeHex(base, -32);
+      const accent = shadeHex(base, 28);
+      const ivory = "#e8d8b0";
+      // Drop shadow under rug
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(p.x + 2, p.y + p.h - 2, p.w, 3);
+      // Field
+      ctx.fillStyle = base;
       ctx.fillRect(p.x, p.y, p.w, p.h);
-      ctx.strokeStyle = shadeHex(p.color || "#c8a060", -25);
-      ctx.lineWidth = 1;
-      ctx.strokeRect(p.x + 2, p.y + 2, p.w - 4, p.h - 4);
-      // pattern
-      ctx.beginPath();
-      for (let i = 0; i < 4; i++) {
-        ctx.moveTo(p.x + 8 + i * (p.w - 16) / 3, p.y + 6);
-        ctx.lineTo(p.x + 8 + i * (p.w - 16) / 3, p.y + p.h - 6);
+      // Outer dark border ring
+      ctx.fillStyle = border;
+      ctx.fillRect(p.x, p.y, p.w, 3);
+      ctx.fillRect(p.x, p.y + p.h - 3, p.w, 3);
+      ctx.fillRect(p.x, p.y, 3, p.h);
+      ctx.fillRect(p.x + p.w - 3, p.y, 3, p.h);
+      // Inner ivory pinstripe
+      ctx.fillStyle = ivory;
+      ctx.fillRect(p.x + 4, p.y + 4, p.w - 8, 0.7);
+      ctx.fillRect(p.x + 4, p.y + p.h - 4.7, p.w - 8, 0.7);
+      ctx.fillRect(p.x + 4, p.y + 4, 0.7, p.h - 8);
+      ctx.fillRect(p.x + p.w - 4.7, p.y + 4, 0.7, p.h - 8);
+      // Repeating border motif (small dots) along the ivory pinstripe
+      ctx.fillStyle = accent;
+      for (let xx = p.x + 8; xx < p.x + p.w - 8; xx += 6) {
+        ctx.fillRect(xx, p.y + 4 - 0.2, 1.2, 1.2);
+        ctx.fillRect(xx, p.y + p.h - 5, 1.2, 1.2);
       }
-      ctx.stroke();
+      for (let yy = p.y + 8; yy < p.y + p.h - 8; yy += 6) {
+        ctx.fillRect(p.x + 4 - 0.2, yy, 1.2, 1.2);
+        ctx.fillRect(p.x + p.w - 5, yy, 1.2, 1.2);
+      }
+      // Central diamond medallion
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      ctx.fillStyle = ivory;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 14);
+      ctx.lineTo(cx + 18, cy);
+      ctx.lineTo(cx, cy + 14);
+      ctx.lineTo(cx - 18, cy);
+      ctx.closePath();
+      ctx.fill();
+      // Inner medallion
+      ctx.fillStyle = accent;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - 8);
+      ctx.lineTo(cx + 11, cy);
+      ctx.lineTo(cx, cy + 8);
+      ctx.lineTo(cx - 11, cy);
+      ctx.closePath();
+      ctx.fill();
+      ctx.fillStyle = base;
+      ctx.fillRect(cx - 2, cy - 2, 4, 4);
+      // Corner motifs (small triangles)
+      ctx.fillStyle = ivory;
+      const corners: [number, number][] = [
+        [p.x + 7, p.y + 7],
+        [p.x + p.w - 7, p.y + 7],
+        [p.x + 7, p.y + p.h - 7],
+        [p.x + p.w - 7, p.y + p.h - 7],
+      ];
+      for (const [tx, ty] of corners) {
+        ctx.beginPath();
+        ctx.arc(tx, ty, 2.4, 0, Math.PI * 2);
+        ctx.fill();
+      }
+      // Fringe at top & bottom (short tassels)
+      ctx.fillStyle = ivory;
+      for (let xx = p.x + 1; xx < p.x + p.w - 1; xx += 2) {
+        ctx.fillRect(xx, p.y - 1.5, 0.8, 1.5);
+        ctx.fillRect(xx, p.y + p.h, 0.8, 1.5);
+      }
       break;
     }
     case "doormat": {
@@ -1297,6 +1548,310 @@ function drawProp(ctx: CanvasRenderingContext2D, ir: Interior, p: InteriorProp) 
       ctx.moveTo(p.x + p.w / 2, p.y);
       ctx.lineTo(p.x + p.w / 2, p.y + p.h);
       ctx.stroke();
+      break;
+    }
+    // ──────────────────────── SAFEHOUSE PROPS ────────────────────────
+    case "nightstand": {
+      const wood = p.color || "#6a4525";
+      ctx.fillStyle = shadeHex(wood, -25);
+      ctx.fillRect(p.x, p.y + p.h - 2, p.w, 2);          // base shadow
+      ctx.fillStyle = wood;
+      ctx.fillRect(p.x, p.y, p.w, p.h);                   // body
+      ctx.fillStyle = shadeHex(wood, 18);
+      ctx.fillRect(p.x, p.y, p.w, 2);                     // top highlight
+      // Drawer line + handle
+      ctx.fillStyle = shadeHex(wood, -32);
+      ctx.fillRect(p.x + 2, p.y + p.h / 2, p.w - 4, 0.6);
+      ctx.fillStyle = "#cdb070";
+      ctx.fillRect(p.x + p.w / 2 - 2, p.y + p.h * 0.7, 4, 1.2);
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      break;
+    }
+    case "wardrobe": {
+      const wood = p.color || "#5a3a1f";
+      // Body
+      ctx.fillStyle = wood;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Top trim
+      ctx.fillStyle = shadeHex(wood, 20);
+      ctx.fillRect(p.x - 1, p.y - 2, p.w + 2, 3);
+      // Two doors
+      ctx.fillStyle = shadeHex(wood, -18);
+      ctx.fillRect(p.x + p.w / 2 - 0.5, p.y + 2, 1, p.h - 4);
+      // Door panels
+      ctx.strokeStyle = shadeHex(wood, -28);
+      ctx.lineWidth = 0.6;
+      ctx.strokeRect(p.x + 3, p.y + 4, p.w / 2 - 5, p.h - 8);
+      ctx.strokeRect(p.x + p.w / 2 + 1.5, p.y + 4, p.w / 2 - 5, p.h - 8);
+      // Brass handles
+      ctx.fillStyle = "#c9a040";
+      ctx.fillRect(p.x + p.w / 2 - 3, p.y + p.h / 2, 1.6, 1.6);
+      ctx.fillRect(p.x + p.w / 2 + 1.6, p.y + p.h / 2, 1.6, 1.6);
+      // Mirror sliver on left door
+      ctx.fillStyle = "rgba(180,200,220,0.35)";
+      ctx.fillRect(p.x + 5, p.y + 6, 4, p.h - 12);
+      ctx.strokeStyle = "rgba(0,0,0,0.4)";
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      break;
+    }
+    case "bookshelf": {
+      const wood = p.color || "#5a3a1f";
+      // Frame
+      ctx.fillStyle = wood;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Top + bottom shadows
+      ctx.fillStyle = shadeHex(wood, 22);
+      ctx.fillRect(p.x - 1, p.y - 1, p.w + 2, 2);
+      ctx.fillStyle = shadeHex(wood, -28);
+      ctx.fillRect(p.x, p.y + p.h - 2, p.w, 2);
+      // Shelves with books — every ~12px row
+      const shelfGap = 12;
+      const bookColors = ["#8a2a2a", "#2a4a8a", "#3a6a3a", "#a07030", "#5a2a6a", "#1f1f1f"];
+      for (let sy = p.y + 4; sy < p.y + p.h - 4; sy += shelfGap) {
+        // Shelf plank
+        ctx.fillStyle = shadeHex(wood, -34);
+        ctx.fillRect(p.x + 2, sy + shelfGap - 2.5, p.w - 4, 1);
+        // Books on this shelf
+        let bx = p.x + 3;
+        let bookIdx = 0;
+        while (bx < p.x + p.w - 4) {
+          const bw = 2 + ((sy + bookIdx) % 3);
+          const bh = shelfGap - 4 - ((bookIdx * 3) % 3);
+          ctx.fillStyle = bookColors[(bookIdx + Math.floor(sy)) % bookColors.length]!;
+          ctx.fillRect(bx, sy + (shelfGap - 3 - bh), bw, bh);
+          // tiny title stripe
+          ctx.fillStyle = "rgba(255,255,255,0.4)";
+          ctx.fillRect(bx + 0.5, sy + (shelfGap - 3 - bh) + bh / 2, bw - 1, 0.3);
+          bx += bw + 0.5;
+          bookIdx++;
+        }
+      }
+      // Outline
+      ctx.strokeStyle = "rgba(0,0,0,0.5)";
+      ctx.lineWidth = 0.6;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      break;
+    }
+    case "floorLamp": {
+      // Base disk
+      ctx.fillStyle = "#2a2a2a";
+      ctx.beginPath();
+      ctx.ellipse(p.x + p.w / 2, p.y + p.h - 1, p.w / 2 + 1, 2, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Pole
+      ctx.fillStyle = "#3a3a3a";
+      ctx.fillRect(p.x + p.w / 2 - 0.5, p.y + 6, 1, p.h - 7);
+      // Shade (trapezoid)
+      ctx.fillStyle = "#e8c878";
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w / 2 - 5, p.y);
+      ctx.lineTo(p.x + p.w / 2 + 5, p.y);
+      ctx.lineTo(p.x + p.w / 2 + 7, p.y + 8);
+      ctx.lineTo(p.x + p.w / 2 - 7, p.y + 8);
+      ctx.closePath();
+      ctx.fill();
+      // Shade highlight
+      ctx.fillStyle = "rgba(255,240,200,0.6)";
+      ctx.fillRect(p.x + p.w / 2 - 4, p.y + 1, 8, 1.5);
+      // Soft warm glow on the floor
+      const grd = ctx.createRadialGradient(
+        p.x + p.w / 2, p.y + p.h, 1,
+        p.x + p.w / 2, p.y + p.h, 22,
+      );
+      grd.addColorStop(0, "rgba(255,220,140,0.35)");
+      grd.addColorStop(1, "rgba(255,220,140,0)");
+      ctx.fillStyle = grd;
+      ctx.beginPath();
+      ctx.arc(p.x + p.w / 2, p.y + p.h, 22, 0, Math.PI * 2);
+      ctx.fill();
+      break;
+    }
+    case "picture": {
+      // Wall-mounted framed picture (artwork)
+      const accent = p.color || "#3a78a8";
+      // Frame
+      ctx.fillStyle = "#2a1f15";
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Mat
+      ctx.fillStyle = "#f0e8d8";
+      ctx.fillRect(p.x + 1.5, p.y + 1.5, p.w - 3, p.h - 3);
+      // Image
+      ctx.fillStyle = accent;
+      ctx.fillRect(p.x + 3, p.y + 3, p.w - 6, p.h - 6);
+      // Simple horizon line on image
+      ctx.fillStyle = shadeHex(accent, -22);
+      ctx.fillRect(p.x + 3, p.y + p.h * 0.6, p.w - 6, 0.8);
+      // Outer dark outline
+      ctx.strokeStyle = "rgba(0,0,0,0.6)";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      break;
+    }
+    case "window": {
+      // A window cut into the wall with curtains framing the glass.
+      // Glass panel
+      const glassH = p.h - 1;
+      ctx.fillStyle = "#9ec0d8";
+      ctx.fillRect(p.x, p.y, p.w, glassH);
+      // Sky gradient inside glass (lighter top, blueish bottom)
+      const sg = ctx.createLinearGradient(p.x, p.y, p.x, p.y + glassH);
+      sg.addColorStop(0, "rgba(255,255,255,0.6)");
+      sg.addColorStop(1, "rgba(80,130,180,0.3)");
+      ctx.fillStyle = sg;
+      ctx.fillRect(p.x, p.y, p.w, glassH);
+      // Window mullions (cross frame)
+      ctx.fillStyle = "#1a1a14";
+      ctx.fillRect(p.x + p.w / 2 - 0.5, p.y, 1, glassH);
+      ctx.fillRect(p.x, p.y + glassH / 2 - 0.5, p.w, 1);
+      // Outer frame
+      ctx.strokeStyle = "#2a1f15";
+      ctx.lineWidth = 1;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, glassH - 1);
+      // Curtains (left + right) hanging down a couple px
+      ctx.fillStyle = "#a02828";
+      ctx.fillRect(p.x - 2, p.y, 4, p.h + 2);
+      ctx.fillRect(p.x + p.w - 2, p.y, 4, p.h + 2);
+      // Curtain folds
+      ctx.fillStyle = "rgba(0,0,0,0.25)";
+      ctx.fillRect(p.x - 1, p.y, 0.5, p.h + 2);
+      ctx.fillRect(p.x + p.w + 0.5, p.y, 0.5, p.h + 2);
+      ctx.fillStyle = "rgba(255,255,255,0.18)";
+      ctx.fillRect(p.x + 0.5, p.y, 0.4, p.h + 2);
+      ctx.fillRect(p.x + p.w - 0.4, p.y, 0.4, p.h + 2);
+      // Curtain rod
+      ctx.fillStyle = "#9a7030";
+      ctx.fillRect(p.x - 4, p.y - 1, p.w + 8, 0.8);
+      break;
+    }
+    case "coffeeTable": {
+      const wood = p.color || "#5a3a1f";
+      // Drop shadow
+      ctx.fillStyle = "rgba(0,0,0,0.18)";
+      ctx.fillRect(p.x + 2, p.y + p.h - 1, p.w, 2);
+      // Top
+      ctx.fillStyle = shadeHex(wood, 12);
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Wood grain rings
+      ctx.strokeStyle = "rgba(0,0,0,0.18)";
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i < 3; i++) {
+        ctx.beginPath();
+        ctx.ellipse(p.x + p.w / 2, p.y + p.h / 2, p.w / 4 - i * 4, p.h / 4 - i * 2, 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // Edge / leg shadow
+      ctx.fillStyle = shadeHex(wood, -28);
+      ctx.fillRect(p.x, p.y + p.h - 2, p.w, 2);
+      // A coffee mug + magazine on top
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(p.x + 6, p.y + 5, 5, 5);
+      ctx.fillStyle = "#5a3a1f";
+      ctx.fillRect(p.x + 7, p.y + 6, 3, 3);
+      // Magazine
+      ctx.fillStyle = "#c83040";
+      ctx.fillRect(p.x + p.w - 18, p.y + 6, 12, 8);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(p.x + p.w - 17, p.y + 7, 5, 0.6);
+      ctx.fillRect(p.x + p.w - 17, p.y + 9, 7, 0.5);
+      // Outline
+      ctx.strokeStyle = "rgba(0,0,0,0.45)";
+      ctx.lineWidth = 0.5;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      break;
+    }
+    case "kitchenette": {
+      // Counter with a sink + cabinet doors below.
+      const counter = "#dad2c0";
+      const cab = p.color || "#9a8a70";
+      // Cabinet body
+      ctx.fillStyle = cab;
+      ctx.fillRect(p.x, p.y + 6, p.w, p.h - 6);
+      // Cabinet doors
+      ctx.fillStyle = shadeHex(cab, -18);
+      const doors = 3;
+      for (let i = 1; i < doors; i++) {
+        ctx.fillRect(p.x + i * (p.w / doors) - 0.4, p.y + 8, 0.8, p.h - 10);
+      }
+      // Door handles
+      ctx.fillStyle = "#3a3a3a";
+      for (let i = 0; i < doors; i++) {
+        ctx.fillRect(p.x + i * (p.w / doors) + p.w / doors / 2 - 1.5, p.y + 14, 3, 0.8);
+      }
+      // Counter top (light stone)
+      ctx.fillStyle = counter;
+      ctx.fillRect(p.x - 1, p.y, p.w + 2, 7);
+      // Counter edge shadow
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      ctx.fillRect(p.x - 1, p.y + 6, p.w + 2, 1);
+      // Sink (stainless inset)
+      const sinkX = p.x + p.w * 0.2;
+      const sinkY = p.y + 1;
+      const sinkW = p.w * 0.3;
+      const sinkH = 5;
+      ctx.fillStyle = "#9aa0a8";
+      ctx.fillRect(sinkX, sinkY, sinkW, sinkH);
+      ctx.fillStyle = "#5a6068";
+      ctx.fillRect(sinkX + 0.5, sinkY + 0.5, sinkW - 1, sinkH - 1);
+      // Faucet
+      ctx.fillStyle = "#c8ccd0";
+      ctx.fillRect(sinkX + sinkW / 2 - 0.5, sinkY - 2, 1, 3);
+      ctx.fillRect(sinkX + sinkW / 2 - 2.5, sinkY - 2.5, 5, 1);
+      // Cutting board + stuff on the right
+      ctx.fillStyle = "#a07a3a";
+      ctx.fillRect(p.x + p.w - 18, p.y + 1, 14, 4);
+      ctx.fillStyle = "#5a3a1f";
+      ctx.fillRect(p.x + p.w - 16, p.y + 2.5, 2, 2);
+      // Kettle
+      ctx.fillStyle = "#1a1a1a";
+      ctx.beginPath();
+      ctx.arc(p.x + p.w - 22, p.y + 3, 2.4, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.fillStyle = "#aaaaaa";
+      ctx.fillRect(p.x + p.w - 23, p.y + 0.5, 2, 1);
+      break;
+    }
+    case "clock": {
+      // Small digital alarm clock — black box w/ red LED display
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      ctx.fillStyle = "#3a0a0a";
+      ctx.fillRect(p.x + 1, p.y + 1, p.w - 2, p.h - 2);
+      ctx.fillStyle = "#ff3030";
+      // Tiny "digits" representation
+      ctx.fillRect(p.x + 1.5, p.y + 1.5, 1, 2);
+      ctx.fillRect(p.x + 3, p.y + 1.5, 1, 2);
+      ctx.fillRect(p.x + 4.5, p.y + 1.5, 0.6, 0.6);
+      ctx.fillRect(p.x + 4.5, p.y + 3, 0.6, 0.6);
+      ctx.fillRect(p.x + 6, p.y + 1.5, 1, 2);
+      ctx.fillRect(p.x + 7.5, p.y + 1.5, 1, 2);
+      break;
+    }
+    case "rugRound": {
+      // Round area rug (alternative to rectangular rug)
+      const base = p.color || "#a05a30";
+      const cx = p.x + p.w / 2;
+      const cy = p.y + p.h / 2;
+      const rx = p.w / 2;
+      const ry = p.h / 2;
+      ctx.fillStyle = base;
+      ctx.beginPath();
+      ctx.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+      ctx.fill();
+      // Concentric rings
+      ctx.strokeStyle = shadeHex(base, -26);
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        ctx.beginPath();
+        ctx.ellipse(cx, cy, rx * (i / 4), ry * (i / 4), 0, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+      // Center dot
+      ctx.fillStyle = "#e8d8b0";
+      ctx.beginPath();
+      ctx.arc(cx, cy, 2, 0, Math.PI * 2);
+      ctx.fill();
       break;
     }
   }
