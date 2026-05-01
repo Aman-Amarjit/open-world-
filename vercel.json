@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm --filter @workspace/gta-clone build && mv artifacts/gta-clone/dist/public ./public",
+  "buildCommand": "pnpm --filter @workspace/gta-clone build && rm -rf ./public && mv artifacts/gta-clone/dist/public ./public",
   "outputDirectory": "public",
   "installCommand": "pnpm install"
 }
