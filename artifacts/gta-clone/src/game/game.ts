@@ -3,6 +3,7 @@ import type {
   GameState,
   Human,
   Vehicle,
+  VehicleKind,
   WeatherKind,
   TimeOfDay,
   Pickup,
@@ -236,12 +237,11 @@ export function createGame(seed = 42): Game {
       const t = world.tiles[ty]![tx]!;
       if (t.type !== "parking") continue;
 
-      // Place a car on every other tile in a grid pattern
-      // Use tx/ty parity to create parking-row structure
-      if ((tx % 2 !== 0) || (ty % 2 !== 0)) continue;
+      // Checkerboard pattern — one slot per pair of tiles, keeps visual spacing
+      if ((tx + ty) % 2 !== 0) continue;
 
-      // ~55% fill probability — lots aren't always full
-      if (Math.random() > 0.55) continue;
+      // ~72% fill probability — lots mostly full but with a few gaps
+      if (Math.random() > 0.72) continue;
 
       // Detect lot orientation: count adjacent parking tiles in X vs Y
       let horiz = 0, vert = 0;
@@ -315,8 +315,8 @@ export function tick(game: Game, dt: number) {
             ? 0.7
             : 0.3;
 
-  // Player input -> movement (skip while end-screen overlay is up)
-  if (!state.endScreen) {
+  // Player input -> movement (skip while end-screen overlay is up or cutscene is playing)
+  if (!state.endScreen && !state.story.cutscene) {
     applyPlayerInput(state, dt);
   }
 
@@ -1749,6 +1749,10 @@ function manageSpawns(state: GameState, world: WorldData) {
     const v = state.vehicles[i]!;
     if (v.driver?.isPlayer) continue;
     const d = dist(v.x, v.y, p.x, p.y);
+    // Never despawn permanently parked cars within a generous radius — they're
+    // part of the world and can't move themselves back if removed.
+    const isPermanentlyParked = !v.driver && v.brake >= 1 && v.aiTimer > 9999;
+    if (isPermanentlyParked && d < 2200) continue;
     const shouldDespawn = d > DESPAWN_RADIUS || (v.blockedTimer > 12 && d > 300);
     if (shouldDespawn) {
       // Also remove driver
@@ -1757,6 +1761,24 @@ function manageSpawns(state: GameState, world: WorldData) {
         if (di >= 0) state.humans.splice(di, 1);
       }
       state.vehicles.splice(i, 1);
+    }
+  }
+
+  // Occasionally give a parked lot car a driver so it pulls out and joins traffic.
+  // This makes parking lots feel alive — you'll see a car back out now and then.
+  if (Math.random() < 0.004) {
+    for (const v of state.vehicles) {
+      if (v.driver || v.brake < 1 || v.aiTimer < 9999) continue;
+      const dv = dist(v.x, v.y, p.x, p.y);
+      if (dv > 900 || dv < 150) continue;
+      // Unpark the car: release brake, reset AI timer, spawn a driver
+      v.brake = 0;
+      v.aiTimer = 0;
+      const driver = createHuman("pedestrian", v.x, v.y, v.angle);
+      driver.inVehicle = v;
+      v.driver = driver;
+      state.humans.push(driver);
+      break;
     }
   }
   for (let i = state.humans.length - 1; i >= 0; i--) {
@@ -2070,7 +2092,6 @@ function tickStory(state: GameState, world: WorldData, dt: number) {
     story.nextMissionTimer <= 0 &&
     !state.activeMission
   ) {
-    story.nextMissionTimer -= dt;
     const def = STORY_MISSIONS[story.missionIdx];
     if (def) {
       // Snap position to nearest road node

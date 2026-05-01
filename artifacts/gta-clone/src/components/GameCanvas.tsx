@@ -178,8 +178,8 @@ export function GameCanvas() {
       {gameRef.current?.state.story.cutscene && started && (
         <Cutscene
           cutscene={gameRef.current.state.story.cutscene}
-          actBanner=""
-          actBannerTimer={0}
+          actBanner={gameRef.current.state.story.actBanner}
+          actBannerTimer={gameRef.current.state.story.actBannerTimer}
         />
       )}
       {/* Act banner — shown between missions when the act changes */}

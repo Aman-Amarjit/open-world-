@@ -1,4 +1,5 @@
 import type { GameState, WeaponKind } from "@/game/types";
+import { TILE } from "@/game/world";
 import type { WorldData, ShopKind } from "@/game/world";
 import { STORY_MISSIONS, ACT_INTROS } from "@/game/story";
 
@@ -24,10 +25,6 @@ export function HUD({ state, world }: Props) {
   const hour = Math.floor((state.worldTime / 60) % 24);
   const min = Math.floor(state.worldTime % 60);
   const timeStr = `${hour.toString().padStart(2, "0")}:${min.toString().padStart(2, "0")}`;
-
-  // Mini-map
-  const mapSize = 160;
-  const worldScale = mapSize / state.mapWidth;
 
   return (
     <div className="hud">
@@ -232,157 +229,209 @@ export function HUD({ state, world }: Props) {
         )}
       </div>
 
-      {/* Mini-map */}
-      <div className="hud-minimap">
-        <svg width={mapSize} height={mapSize} viewBox={`0 0 ${mapSize} ${mapSize}`}>
-          <rect width={mapSize} height={mapSize} fill="#0d1015" />
-          {/* river */}
-          <rect
-            x={0}
-            y={39 * 64 * worldScale}
-            width={mapSize}
-            height={5 * 64 * worldScale}
-            fill="#1f3d6a"
-          />
-          {/* roads */}
-          {Array.from({ length: 8 }, (_, i) => i * 10 + 4).map((t) => (
-            <g key={`r${t}`}>
-              <line
-                x1={0}
-                x2={mapSize}
-                y1={(t + 2) * 64 * worldScale}
-                y2={(t + 2) * 64 * worldScale}
-                stroke="#3a3a3a"
-                strokeWidth={2}
+      {/* Mini-map — player-centered radar */}
+      {(() => {
+        const MS = 200; // minimap pixel size
+        const LR = 900; // world-pixel radius shown on the radar
+        const msc = (MS / 2) / LR; // scale: world-px → minimap-px
+        const mcx = MS / 2;
+        const mcy = MS / 2;
+        const wx2m = (wx: number) => (wx - p.x) * msc + mcx;
+        const wy2m = (wy: number) => (wy - p.y) * msc + mcy;
+        const inView = (wx: number, wy: number) => {
+          const mx = wx2m(wx), my = wy2m(wy);
+          return mx > -8 && mx < MS + 8 && my > -8 && my < MS + 8;
+        };
+
+        // Player direction arrow
+        const pAngle = p.inVehicle ? p.inVehicle.angle : p.angle;
+        const as = 7;
+        const arrowPts = [
+          [mcx + Math.cos(pAngle) * as, mcy + Math.sin(pAngle) * as],
+          [mcx + Math.cos(pAngle + 2.4) * as * 0.6, mcy + Math.sin(pAngle + 2.4) * as * 0.6],
+          [mcx + Math.cos(pAngle - 2.4) * as * 0.6, mcy + Math.sin(pAngle - 2.4) * as * 0.6],
+        ].map(([x, y]) => `${x},${y}`).join(" ");
+
+        // Active mission direction: clamp to edge of radar if outside view
+        let missionEdge: { x: number; y: number; col: string } | null = null;
+        const am = state.activeMission;
+        if (am) {
+          const mxr = wx2m(am.targetX), myr = wy2m(am.targetY);
+          if (!inView(am.targetX, am.targetY)) {
+            // Project to edge of radar circle
+            const a = Math.atan2(myr - mcy, mxr - mcx);
+            const edgeR = MS / 2 - 8;
+            missionEdge = {
+              x: mcx + Math.cos(a) * edgeR,
+              y: mcy + Math.sin(a) * edgeR,
+              col: am.markerColor,
+            };
+          }
+        }
+
+        return (
+          <div className="hud-minimap">
+            <svg width={MS} height={MS} viewBox={`0 0 ${MS} ${MS}`}
+              style={{ display: "block", borderRadius: "50%", overflow: "hidden" }}>
+              <defs>
+                <clipPath id="radar-clip">
+                  <circle cx={mcx} cy={mcy} r={MS / 2} />
+                </clipPath>
+              </defs>
+              <g clipPath="url(#radar-clip)">
+                {/* Background */}
+                <rect width={MS} height={MS} fill="#0c1018" />
+
+                {/* Road grid — horizontal roads */}
+                {world.roadHorizontals.map((ry) => {
+                  const worldY = (ry + 2) * TILE;
+                  const my = wy2m(worldY);
+                  if (my < -4 || my > MS + 4) return null;
+                  return (
+                    <line key={`rh${ry}`}
+                      x1={0} x2={MS} y1={my} y2={my}
+                      stroke="#2e3540" strokeWidth={4}
+                    />
+                  );
+                })}
+
+                {/* Road grid — vertical roads */}
+                {world.roadVerticals.map((rx) => {
+                  const worldX = (rx + 2) * TILE;
+                  const mx = wx2m(worldX);
+                  if (mx < -4 || mx > MS + 4) return null;
+                  return (
+                    <line key={`rv${rx}`}
+                      x1={mx} x2={mx} y1={0} y2={MS}
+                      stroke="#2e3540" strokeWidth={4}
+                    />
+                  );
+                })}
+
+                {/* Road lane center lines */}
+                {world.roadHorizontals.map((ry) => {
+                  const worldY = (ry + 2) * TILE;
+                  const my = wy2m(worldY);
+                  if (my < -4 || my > MS + 4) return null;
+                  return (
+                    <line key={`rhl${ry}`}
+                      x1={0} x2={MS} y1={my} y2={my}
+                      stroke="#3a4050" strokeWidth={1} strokeDasharray="5 6"
+                    />
+                  );
+                })}
+                {world.roadVerticals.map((rx) => {
+                  const worldX = (rx + 2) * TILE;
+                  const mx = wx2m(worldX);
+                  if (mx < -4 || mx > MS + 4) return null;
+                  return (
+                    <line key={`rvl${rx}`}
+                      x1={mx} x2={mx} y1={0} y2={MS}
+                      stroke="#3a4050" strokeWidth={1} strokeDasharray="5 6"
+                    />
+                  );
+                })}
+
+                {/* Shops */}
+                {world.shops.filter(s => inView(s.doorX, s.doorY)).map((s) => (
+                  <rect key={`sh${s.id}`}
+                    x={wx2m(s.doorX) - 3} y={wy2m(s.doorY) - 3}
+                    width={6} height={6}
+                    fill={s.color} stroke="#000" strokeWidth={0.8}
+                  />
+                ))}
+
+                {/* Pickups */}
+                {state.pickups.filter(pk => inView(pk.x, pk.y)).map((pk, i) => (
+                  <circle key={i}
+                    cx={wx2m(pk.x)} cy={wy2m(pk.y)} r={2.5}
+                    fill="#ffd040"
+                  />
+                ))}
+
+                {/* Police vehicles */}
+                {state.vehicles.filter(v => v.kind === "police" && !v.driver?.isPlayer && inView(v.x, v.y)).map((v) => (
+                  <circle key={v.id}
+                    cx={wx2m(v.x)} cy={wy2m(v.y)} r={2.5}
+                    fill="#4a90ff"
+                  />
+                ))}
+
+                {/* Gang / hostile humans */}
+                {state.humans.filter(h => (h.kind === "police" || h.kind === "gang") && !h.isPlayer && inView(h.x, h.y)).map((h) => (
+                  <circle key={h.id}
+                    cx={wx2m(h.x)} cy={wy2m(h.y)} r={2}
+                    fill={h.kind === "police" ? "#4a90ff" : "#e84040"}
+                  />
+                ))}
+
+                {/* Available mission markers */}
+                {state.missions.filter(m => inView(m.targetX, m.targetY)).map((m) => (
+                  <g key={m.id}>
+                    <circle cx={wx2m(m.targetX)} cy={wy2m(m.targetY)} r={5}
+                      fill={m.markerColor} opacity={0.35}
+                    />
+                    <circle cx={wx2m(m.targetX)} cy={wy2m(m.targetY)} r={2.5}
+                      fill={m.markerColor}
+                    />
+                  </g>
+                ))}
+
+                {/* Active mission — line + pulsing ring */}
+                {am && inView(am.targetX, am.targetY) && (
+                  <g>
+                    <line
+                      x1={mcx} y1={mcy}
+                      x2={wx2m(am.targetX)} y2={wy2m(am.targetY)}
+                      stroke={am.markerColor} strokeWidth={0.8}
+                      strokeDasharray="3 4" opacity={0.6}
+                    />
+                    <circle cx={wx2m(am.targetX)} cy={wy2m(am.targetY)} r={6}
+                      fill="none" stroke={am.markerColor} strokeWidth={1.5}
+                    />
+                    <circle cx={wx2m(am.targetX)} cy={wy2m(am.targetY)} r={3}
+                      fill={am.markerColor}
+                    />
+                  </g>
+                )}
+
+                {/* Mission off-screen edge indicator */}
+                {missionEdge && (
+                  <polygon
+                    points={`${missionEdge.x},${missionEdge.y - 6} ${missionEdge.x - 4},${missionEdge.y + 3} ${missionEdge.x + 4},${missionEdge.y + 3}`}
+                    fill={missionEdge.col}
+                    transform={`rotate(${Math.atan2(missionEdge.y - mcy, missionEdge.x - mcx) * 180 / Math.PI + 90} ${missionEdge.x} ${missionEdge.y})`}
+                  />
+                )}
+
+                {/* Player arrow */}
+                <circle cx={mcx} cy={mcy} r={6} fill="rgba(58,255,144,0.18)" />
+                <polygon points={arrowPts} fill="#3aff90" stroke="#fff" strokeWidth={0.6} />
+
+                {/* Radar edge vignette */}
+                <circle cx={mcx} cy={mcy} r={MS / 2 - 1}
+                  fill="none" stroke="rgba(0,0,0,0.6)" strokeWidth={6}
+                />
+              </g>
+
+              {/* Compass — outside clip, top center */}
+              <text x={mcx} y={10} textAnchor="middle"
+                fill="#aab" fontSize={9} fontFamily="monospace" fontWeight="bold">N</text>
+              <text x={MS - 6} y={mcy + 4} textAnchor="middle"
+                fill="#778" fontSize={8} fontFamily="monospace">E</text>
+              <text x={6} y={mcy + 4} textAnchor="middle"
+                fill="#778" fontSize={8} fontFamily="monospace">W</text>
+              <text x={mcx} y={MS - 2} textAnchor="middle"
+                fill="#778" fontSize={8} fontFamily="monospace">S</text>
+
+              {/* Outer ring border */}
+              <circle cx={mcx} cy={mcy} r={MS / 2 - 1}
+                fill="none" stroke="rgba(80,120,180,0.5)" strokeWidth={2}
               />
-              <line
-                y1={0}
-                y2={mapSize}
-                x1={(t + 2) * 64 * worldScale}
-                x2={(t + 2) * 64 * worldScale}
-                stroke="#3a3a3a"
-                strokeWidth={2}
-              />
-            </g>
-          ))}
-          {/* vehicles */}
-          {state.vehicles.map((v) => (
-            <circle
-              key={v.id}
-              cx={v.x * worldScale}
-              cy={v.y * worldScale}
-              r={1.5}
-              fill={v.kind === "police" ? "#4a90ff" : "#888"}
-            />
-          ))}
-          {/* hostile humans */}
-          {state.humans
-            .filter((h) => h.kind === "police" || h.kind === "gang")
-            .map((h) => (
-              <circle
-                key={h.id}
-                cx={h.x * worldScale}
-                cy={h.y * worldScale}
-                r={1.2}
-                fill={h.kind === "police" ? "#4a90ff" : "#e84040"}
-              />
-            ))}
-          {/* pickups */}
-          {state.pickups.map((p, i) => (
-            <rect
-              key={i}
-              x={p.x * worldScale - 1}
-              y={p.y * worldScale - 1}
-              width={2}
-              height={2}
-              fill="#ffd040"
-            />
-          ))}
-          {/* shops */}
-          {world.shops.map((s) => (
-            <rect
-              key={`shop${s.id}`}
-              x={s.doorX * worldScale - 2}
-              y={s.doorY * worldScale - 2}
-              width={4}
-              height={4}
-              fill={s.color}
-              stroke="#000"
-              strokeWidth={0.5}
-            />
-          ))}
-          {/* mission markers */}
-          {state.missions.map((m) => (
-            <g key={m.id}>
-              <circle
-                cx={m.targetX * worldScale}
-                cy={m.targetY * worldScale}
-                r={4}
-                fill={m.markerColor}
-                opacity={0.4}
-              />
-              <circle
-                cx={m.targetX * worldScale}
-                cy={m.targetY * worldScale}
-                r={2}
-                fill={m.markerColor}
-              />
-            </g>
-          ))}
-          {state.activeMission && (
-            <g>
-              <circle
-                cx={state.activeMission.targetX * worldScale}
-                cy={state.activeMission.targetY * worldScale}
-                r={5}
-                fill="none"
-                stroke={state.activeMission.markerColor}
-                strokeWidth={1.2}
-              />
-              <circle
-                cx={state.activeMission.targetX * worldScale}
-                cy={state.activeMission.targetY * worldScale}
-                r={2.5}
-                fill={state.activeMission.markerColor}
-              />
-              <line
-                x1={p.x * worldScale}
-                y1={p.y * worldScale}
-                x2={state.activeMission.targetX * worldScale}
-                y2={state.activeMission.targetY * worldScale}
-                stroke={state.activeMission.markerColor}
-                strokeWidth={0.8}
-                strokeDasharray="2 3"
-                opacity={0.7}
-              />
-            </g>
-          )}
-          {/* player */}
-          <circle
-            cx={p.x * worldScale}
-            cy={p.y * worldScale}
-            r={2.5}
-            fill="#3aff90"
-          />
-          <circle
-            cx={p.x * worldScale}
-            cy={p.y * worldScale}
-            r={4}
-            fill="none"
-            stroke="#3aff90"
-            opacity={0.5}
-          />
-          {/* viewport box */}
-          <rect
-            x={(state.camera.x - window.innerWidth / 2 / state.camera.zoom) * worldScale}
-            y={(state.camera.y - window.innerHeight / 2 / state.camera.zoom) * worldScale}
-            width={(window.innerWidth / state.camera.zoom) * worldScale}
-            height={(window.innerHeight / state.camera.zoom) * worldScale}
-            fill="none"
-            stroke="rgba(255,255,255,0.3)"
-          />
-        </svg>
-      </div>
+            </svg>
+          </div>
+        );
+      })()}
 
       {/* Notifications */}
       <div className="hud-notifs">
