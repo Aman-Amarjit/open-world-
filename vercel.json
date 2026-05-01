@@ -1,5 +1,5 @@
 {
-  "buildCommand": "pnpm --filter @workspace/gta-clone build",
-  "outputDirectory": "artifacts/gta-clone/dist/public",
+  "buildCommand": "pnpm --filter @workspace/gta-clone build && mkdir -p public_output && cp -r artifacts/gta-clone/dist/public/* public_output/",
+  "outputDirectory": "public_output",
   "installCommand": "pnpm install"
 }
