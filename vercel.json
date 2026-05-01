@@ -1,6 +1,6 @@
 {
   "buildCommand": "pnpm run deploy:vercel",
-  "outputDirectory": "artifacts/gta-clone/dist/public",
+  "outputDirectory": "public",
   "installCommand": "pnpm install",
   "framework": "vite"
 }
