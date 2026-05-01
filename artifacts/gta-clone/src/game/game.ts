@@ -1162,6 +1162,7 @@ const SHOP_INFO: Record<
   food: { label: "Eat (+25 HP)", cost: 0, cooldown: 6 },
   safehouse: { label: "Save spawn", cost: 0, cooldown: 5 },
   ammu: { label: "Buy SMG ammo", cost: 200, cooldown: 4 },
+  gym: { label: "Workout", cost: 10, cooldown: 10 },
 };
 
 let shopCooldownTimer = 0;
@@ -2192,7 +2193,6 @@ function freezePlayerForCutscene(state: GameState) {
     const v = p.inVehicle;
     v.vx = 0;
     v.vy = 0;
-    v.speed = 0;
     v.throttle = 0;
     v.brake = 0;
     v.steer = 0;

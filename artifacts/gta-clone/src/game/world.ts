@@ -25,7 +25,8 @@ export type District =
   | "industrial"
   | "park"
   | "waterfront"
-  | "forest";
+  | "forest"
+  | "port";
 
 export interface Tile {
   type: TileType;
@@ -352,6 +353,10 @@ export function generateWorld(seed: number): WorldData {
       { wall: "#504030", roof: "#281808", window: "#a8d4ff" },
       { wall: "#403828", roof: "#200e00", window: "#ffd87a" },
     ],
+    port: [
+      { wall: "#4a4e52", roof: "#1e2226", window: "#7a90a8" },
+      { wall: "#3d4246", roof: "#161a1e", window: "#88a0b0" },
+    ],
   };
   const getPalette = (d: District) => palettes[d] ?? palettes.industrial;
 
@@ -366,6 +371,7 @@ export function generateWorld(seed: number): WorldData {
     park:        { heightMin: 6,  heightMax: 12, neon: 0.04, parkChance: 0.90, subdivide: 0.25, buildChance: 0.4,  fillChance: 0.40 },
     waterfront:  { heightMin: 8,  heightMax: 20, neon: 0.22, parkChance: 0.28, subdivide: 0.55, buildChance: 0.7,  fillChance: 0.70 },
     forest:      { heightMin: 5,  heightMax: 10, neon: 0.00, parkChance: 0.96, subdivide: 0.05, buildChance: 0.06, fillChance: 0.06 },
+    port:        { heightMin: 12, heightMax: 25, neon: 0.10, parkChance: 0.02, subdivide: 0.15, buildChance: 0.9,  fillChance: 0.85 },
   };
 
   let bid = 1;

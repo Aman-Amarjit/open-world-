@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import type { StoryCutscene, DialogueLine } from "@/game/types";
 
 interface Props {
@@ -15,7 +15,7 @@ interface CharStyle {
   bg: string;       // background gradient
   shape: string;    // clip-path for the bust silhouette
   accent: string;   // secondary color
-  detail: JSX.Element; // inline detail drawn inside portrait
+  detail: React.ReactNode; // inline detail drawn inside portrait
 }
 
 function PortraitDetail({ speaker, color }: { speaker: string; color: string }) {
@@ -284,6 +284,7 @@ export function Cutscene({ cutscene, actBanner, actBannerTimer }: Props) {
       return () => clearTimeout(t);
     } else {
       setTitleVisible(false);
+      return;
     }
   }, [cutscene.missionIdx, cutscene.phase]);
 

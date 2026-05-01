@@ -6,7 +6,12 @@ export type VehicleKind =
   | "truck"
   | "police"
   | "sports"
-  | "taxi";
+  | "taxi"
+  | "suv"
+  | "motorcycle"
+  | "ambulance"
+  | "fire_truck"
+  | "bus";
 
 export type HumanKind = "player" | "pedestrian" | "gang" | "police";
 

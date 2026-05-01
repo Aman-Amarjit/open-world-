@@ -16,6 +16,7 @@ const SHOP_PROMPTS: Record<ShopKind, string> = {
   food: "Eat (free) — +25 HP",
   pay_n_spray: "Pay 'n' Spray — $100 (need car)",
   safehouse: "Save Spawn (free)",
+  gym: "Workout — $10 (+Stamina)",
 };
 
 export function HUD({ state, world }: Props) {
