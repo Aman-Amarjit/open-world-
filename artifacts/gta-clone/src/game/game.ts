@@ -51,9 +51,9 @@ export interface Game {
 
 export function createGame(seed = 42): Game {
   const world = generateWorld(seed);
-  // Find a road tile near map center
-  const cx = (MAP_TILES / 2) * TILE;
-  const cy = (MAP_TILES / 2) * TILE;
+  // Find a road tile near Ironport City (bottom-left)
+  const cx = 30 * TILE;
+  const cy = (MAP_TILES - 30) * TILE;
   const spawn = findNearestRoad(world, cx, cy);
   const player = createHuman("player", spawn.x, spawn.y, 0);
   const state: GameState = {
@@ -160,6 +160,14 @@ export function createGame(seed = 42): Game {
         }
         if (isPark && Math.random() < 0.04) {
           state.props.push(createProp("bench", wx, wy));
+        }
+        // LANDMARK: The Giant Oak (Aethelia Center)
+        if (tx === Math.floor(MAP_TILES / 2) && ty === Math.floor(MAP_TILES / 2)) {
+          state.props.push(createProp("oak", wx, wy, 0));
+          // make it extra big? The current render just draws the same size, but I can add more oaks around it
+          for(let i=0; i<8; i++) {
+            state.props.push(createProp("oak", wx + rand(-40, 40), wy + rand(-40, 40), Math.floor(rand(0,4))));
+          }
         }
       } else if (t.type === "plaza") {
         // Fountain centerpiece on every plaza tile
@@ -1658,7 +1666,7 @@ function manageSpawns(state: GameState, world: WorldData) {
       state.animals.splice(i, 1);
     }
   }
-  const TARGET_ANIMALS = 24; // Increased for larger world
+  const TARGET_ANIMALS = 48; // Significantly increased for a lush "Aethelia" feel
   if (state.animals.length < TARGET_ANIMALS && Math.random() < 0.08) {
     const angle = Math.random() * Math.PI * 2;
     const r = rand(400, SPAWN_RADIUS);
@@ -1672,7 +1680,8 @@ function manageSpawns(state: GameState, world: WorldData) {
       let kind: import("./types").AnimalKind = "pigeon";
       if (t.district === "forest") {
         const roll = Math.random();
-        kind = roll < 0.3 ? "deer" : roll < 0.5 ? "wolf" : roll < 0.65 ? "boar" : roll < 0.8 ? "bear" : "pigeon";
+        // Aethelia forest is home to many wild creatures
+        kind = roll < 0.25 ? "deer" : roll < 0.45 ? "wolf" : roll < 0.65 ? "boar" : roll < 0.85 ? "bear" : "pigeon";
       } else if (t.district === "park" || t.district === "residential") {
         const roll = Math.random();
         kind = roll < 0.4 ? "dog" : roll < 0.7 ? "cat" : roll < 0.85 ? "cow" : "pigeon";

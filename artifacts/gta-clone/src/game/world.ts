@@ -116,14 +116,14 @@ export function generateWorld(seed: number): WorldData {
   // Curated layout: bay/waterfront on the south-east, downtown center,
   // residential outskirts, an industrial pocket, park district top-left.
   const layout: District[][] = [
-    ["forest", "forest", "park", "residential", "commercial", "downtown", "downtown", "commercial"],
-    ["forest", "forest", "residential", "residential", "downtown", "downtown", "commercial", "industrial"],
-    ["park", "residential", "residential", "downtown", "downtown", "commercial", "industrial", "industrial"],
-    ["residential", "residential", "downtown", "downtown", "commercial", "commercial", "industrial", "waterfront"],
-    ["residential", "commercial", "downtown", "downtown", "commercial", "waterfront", "waterfront", "waterfront"],
-    ["commercial", "commercial", "commercial", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
-    ["park", "park", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
-    ["forest", "forest", "forest", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
+    ["forest", "forest", "park", "forest", "forest", "forest", "forest", "forest"],
+    ["forest", "forest", "forest", "forest", "forest", "forest", "forest", "forest"],
+    ["forest", "forest", "forest", "forest", "forest", "forest", "forest", "forest"],
+    ["residential", "residential", "forest", "forest", "forest", "forest", "forest", "commercial"],
+    ["commercial", "residential", "forest", "forest", "forest", "forest", "residential", "waterfront"],
+    ["waterfront", "residential", "forest", "forest", "residential", "commercial", "waterfront", "waterfront"],
+    ["downtown", "downtown", "residential", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
+    ["downtown", "downtown", "residential", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
   ];
   for (let dr = 0; dr < DROWS; dr++) {
     const row: District[] = [];
@@ -180,36 +180,66 @@ export function generateWorld(seed: number): WorldData {
     }
   }
 
-  // ---- RIVER + BRIDGES ----
-  // Carve a horizontal river band; vertical roads cross it as bridges.
-  const RIVER_Y = 39; // tile row where river starts
-  const RIVER_H = 5; // 5-tile-wide water band
-  for (let yi = 0; yi < RIVER_H; yi++) {
-    const ry = RIVER_Y + yi;
-    if (ry < 0 || ry >= H) continue;
-    for (let x = 0; x < W; x++) {
-      const t = tiles[ry]![x]!;
-      // If this tile is part of a vertical road, keep the road as a BRIDGE.
-      const onVerticalRoad = roadVerticals.some((vx) => x >= vx && x < vx + 4);
-      if (onVerticalRoad) {
-        tiles[ry]![x] = {
-          type: "road",
-          roadDir: "v",
-          isBridge: true,
-          district: t.district,
-        };
-      } else {
-        tiles[ry]![x] = { type: "water", district: t.district };
+  // ---- SERPENT RIVER + BRIDGES ----
+  // Carve a snaking river from top-left to bottom-left/sea.
+  for (let x = 0; x < W; x++) {
+    // Snake equation: center Y around 40, drift left-to-right?
+    // Actually the image has it on the LEFT side.
+    const riverCenterX = 20 + Math.sin(x * 0.12) * 12 + (x < 80 ? Math.cos(x * 0.05) * 8 : 0);
+    const riverWidth = 6;
+    for (let xi = -Math.floor(riverWidth/2); xi <= Math.floor(riverWidth/2); xi++) {
+      const rx = Math.floor(riverCenterX + xi);
+      if (rx < 0 || rx >= W) continue;
+      for (let y = 0; y < H; y++) {
+        // Only apply to a specific Y range if needed, or let it run full height
+        // To match the image, it snaky mostly on the left.
+        if (x === rx) {
+          const t = tiles[y]![x]!;
+          // If this tile is part of a horizontal road, keep the road as a BRIDGE.
+          const onHorizontalRoad = roadHorizontals.some((hy) => y >= hy && y < hy + 4);
+          if (onHorizontalRoad) {
+            tiles[y]![x] = {
+              type: "road",
+              roadDir: "h",
+              isBridge: true,
+              district: t.district,
+            };
+          } else {
+            tiles[y]![x] = { type: "water", district: t.district };
+          }
+        }
       }
     }
   }
-  // Sandy beach strip adjacent to water on shores (waterfront / park districts)
-  for (let x = 0; x < W; x++) {
-    for (const sy of [RIVER_Y - 1, RIVER_Y + RIVER_H]) {
-      if (sy < 0 || sy >= H) continue;
-      const t = tiles[sy]![x]!;
-      if (t.type === "grass") {
-        tiles[sy]![x] = { type: "sand", district: t.district };
+
+  // Large Sea body on the East and South edges (Waterfront district already mostly handles this, but let's be explicit)
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const d = districtAt(x, y);
+      if (d === "waterfront") {
+        // High chance of being actual water if near edges
+        const edgeDist = Math.min(W - 1 - x, H - 1 - y);
+        if (edgeDist < 15 || rng() < 0.7) {
+           const onRoad = roadHorizontals.some(hy => y >= hy && y < hy+4) || roadVerticals.some(vx => x >= vx && x < vx+4);
+           if (!onRoad) {
+             tiles[y]![x] = { type: "water", district: d };
+           }
+        }
+      }
+    }
+  }
+
+  // Sandy beach strip adjacent to water
+  for (let y = 1; y < H - 1; y++) {
+    for (let x = 1; x < W - 1; x++) {
+      if (tiles[y]![x]!.type === "grass") {
+        const hasWater = [
+          tiles[y-1]![x]!.type, tiles[y+1]![x]!.type,
+          tiles[y]![x-1]!.type, tiles[y]![x+1]!.type
+        ].some(t => t === "water");
+        if (hasWater) {
+          tiles[y]![x] = { type: "sand", district: tiles[y]![x]!.district };
+        }
       }
     }
   }
