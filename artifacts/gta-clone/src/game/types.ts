@@ -164,7 +164,9 @@ export interface Animal {
   angle: number;
   speed: number;
   hp: number;
-  state: "wander" | "flee" | "downed" | "sit" | "sniff" | "chase" | "bark" | "attack";
+  state: "wander" | "flee" | "downed" | "sit" | "sniff" | "chase" | "bark" | "attack" | "follow" | "stalk" | "graze";
+  // followTimer: how long dog has been peacefully near player (seconds)
+  followTimer?: number;
   stateTimer: number;
   walkPhase: number;
   furColor: string;

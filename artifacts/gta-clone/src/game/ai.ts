@@ -282,25 +282,48 @@ function updatePedestrian(
       h.aiState = "panic";
       h.panicFromX = threat.x;
       h.panicFromY = threat.y;
-      // Shorter panic window (was 3s). They'll still flee but recover sooner
-      // so the screen isn't permanently plastered with `!` icons.
       h.aiTimer = Math.max(h.aiTimer, 1.6);
+      // PANIC SHOUT — 25% chance ped yells something when they first panic
+      if (h.witnessTimer <= 0 && Math.random() < 0.25) {
+        state.notifications.push({
+          text: pick(["Help!", "Oh god!", "Call 911!", "Run!", "Someone help!", "Get down!"]),
+          life: 1.5,
+          color: "#ffccaa",
+        });
+        h.witnessTimer = 5; // don't shout again soon
+      }
     }
     if (h.aiTimer <= 0) {
-      // Calm down
       h.aiState = "wander";
       h.aiTimer = rand(2, 4);
       h.aiPath = [];
     } else {
-      // Run away from panic source. Speed multiplier and wobble dialed down
-      // so panicked peds don't dart into traffic at high speed and clog the
-      // streets with bodies whenever a single shot is fired.
       const a = angleTo(h.panicFromX, h.panicFromY, h.x, h.y);
       const wob = Math.sin(performance.now() / 140 + h.id) * 0.22;
       h.vx = Math.cos(a + wob) * h.speed * 1.35;
       h.vy = Math.sin(a + wob) * h.speed * 1.35;
-      // Walk anim faster
       h.walkPhase += dt * 16;
+      return;
+    }
+  }
+
+  // ---- RUBBERNECK: stop and stare at a burning / wrecked vehicle -------
+  if (h.aiState === "wander" && h.witnessTimer <= 0) {
+    for (const v of state.vehicles) {
+      if (!v.onFire && v.damage < 0.8) continue;
+      const dv = dist(h.x, h.y, v.x, v.y);
+      if (dv > 130) continue;
+      // Slow right down and face the wreck
+      h.vx *= 0.1;
+      h.vy *= 0.1;
+      h.angle = angleTo(h.x, h.y, v.x, v.y);
+      // After a beat, flee slightly
+      if (v.onFire && Math.random() < 0.005) {
+        h.aiState = "panic";
+        h.panicFromX = v.x;
+        h.panicFromY = v.y;
+        h.aiTimer = rand(2, 4);
+      }
       return;
     }
   }
@@ -1065,13 +1088,50 @@ function driveCivilian(
   let diff = desired - v.angle;
   while (diff > Math.PI) diff -= Math.PI * 2;
   while (diff < -Math.PI) diff += Math.PI * 2;
+
+  // RIGHT-LANE BIAS: nudge the car to keep to the right half of the road at
+  // all times, not just near intersections. We compute the lateral offset from
+  // the ideal right-lane position (LANE_OFFSET to the right of the road
+  // center-line) and blend it into the steering correction.
+  {
+    const fwdX = Math.cos(v.angle), fwdY = Math.sin(v.angle);
+    const rightX = -fwdY, rightY = fwdX; // perpendicular rightward
+    const idealX = v.aiTargetX + rightX * LANE_OFFSET;
+    const idealY = v.aiTargetY + rightY * LANE_OFFSET;
+    const lateralErr = (v.x - idealX) * rightX + (v.y - idealY) * rightY;
+    const laneBias = clamp(-lateralErr * 0.018, -0.25, 0.25);
+    diff += laneBias;
+  }
+
   v.steer = clamp(diff * 2.5, -1, 1);
-  // turn signal
   v.signal = Math.abs(diff) > 0.4 ? Math.sign(diff) : 0;
 
+  // RUBBERNECK: slow significantly when passing a burning/wrecked vehicle
+  let rubbernecking = false;
+  for (const o of state.vehicles) {
+    if (o === v) continue;
+    if (!o.onFire && o.damage < 0.85) continue;
+    const dx = o.x - v.x, dy = o.y - v.y;
+    const d = Math.hypot(dx, dy);
+    if (d > 120) continue;
+    rubbernecking = true;
+    break;
+  }
+
   // Default throttle
-  let throttle = 0.55;
-  let brake = 0;
+  let throttle = rubbernecking ? 0.18 : 0.55;
+  let brake = rubbernecking ? 0.25 : 0;
+
+  // RANDOM PARKING: occasionally a civilian pulls over and idles for a bit
+  if (!v.reverseTimer && v.drivingStyle !== "aggressive" && Math.random() < 0.00008 * dt) {
+    v.steer = 0.6; // pull right
+    v.throttle = 0.05;
+    v.brake = 0.8;
+    v.signal = 1;
+    // Mark parked for a random duration using aiTimer
+    if (v.aiTimer <= 0) v.aiTimer = rand(8, 25);
+    return;
+  }
 
   // Forward sensor: brake if vehicle/ped in front
   const sp = Math.hypot(v.vx, v.vy);

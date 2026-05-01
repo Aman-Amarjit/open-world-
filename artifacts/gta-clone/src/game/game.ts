@@ -1147,6 +1147,7 @@ function updateAnimals(state: GameState, dt: number, world: WorldData) {
   for (const a of state.animals) {
     a.walkPhase += dt * (a.kind === "pigeon" ? 12 : a.kind === "cat" ? 9 : 7);
     if (a.stateTimer > 0) a.stateTimer -= dt;
+    if (a.followTimer !== undefined) a.followTimer = Math.max(0, a.followTimer - dt);
 
     if (a.hp <= 0) {
       a.state = "downed";
@@ -1158,216 +1159,361 @@ function updateAnimals(state: GameState, dt: number, world: WorldData) {
       continue;
     }
 
-    // SCARE check: gunshots, vehicles, player nearby
+    // SCARE check: player proximity, fast vehicles, bullets, gunshots
     const dPlayer = dist(a.x, a.y, p.x, p.y);
     let scared = false;
     let sx = a.x, sy = a.y;
 
-    const scareRange = a.kind === "deer" ? 180 : a.kind === "pigeon" ? 75 : 60;
-    if (dPlayer < scareRange) {
+    const scareRange = a.kind === "deer" ? 200 : a.kind === "pigeon" ? 80 : a.kind === "bear" || a.kind === "wolf" ? 0 : 65;
+    if (scareRange > 0 && dPlayer < scareRange) {
       scared = true; sx = p.x; sy = p.y;
     }
+    // Dogs following player are not scared of the player
+    if (a.kind === "dog" && a.state === "follow") scared = false;
+
     if (!scared) {
       for (const v of state.vehicles) {
-        if (distSq(a.x, a.y, v.x, v.y) < 90 * 90 && Math.hypot(v.vx, v.vy) > 40) {
+        const vsp = Math.hypot(v.vx, v.vy);
+        if (vsp < 50) continue;
+        if (distSq(a.x, a.y, v.x, v.y) < 110 * 110) {
           scared = true; sx = v.x; sy = v.y; break;
         }
       }
     }
-    if (!scared) {
+    if (!scared && state.combatTimer > 0) {
       for (const b of state.bullets) {
-        if (distSq(a.x, a.y, b.x, b.y) < 70 * 70) {
+        if (distSq(a.x, a.y, b.x, b.y) < 80 * 80) {
           scared = true; sx = b.x; sy = b.y; break;
         }
       }
     }
 
     if (scared) {
-      // Aggressive animals might attack instead of flee
-      if ((a.kind === "bear" || a.kind === "wolf" || a.kind === "boar") && dPlayer < 120 && a.hp > 0) {
+      const wasChasing = a.state === "follow" || a.state === "stalk";
+      // Aggressive animals attack instead of flee when close
+      if ((a.kind === "bear" || a.kind === "wolf" || a.kind === "boar") && dPlayer < 140 && a.hp > 0) {
         if (a.state !== "attack") {
           a.state = "attack";
-          a.stateTimer = 10;
+          a.stateTimer = 12;
+          state.notifications.push({ text: a.kind === "bear" ? "Bear attack!" : a.kind === "wolf" ? "Wolf attack!" : "Boar charge!", life: 2, color: "#ff4040" });
         }
       } else {
-        a.state = "flee";
-        a.stateTimer = a.kind === "deer" ? rand(4, 7) : rand(2, 4);
-        a.panicFromX = sx; a.panicFromY = sy;
-        if (a.kind === "pigeon" && a.flyZ < 0.1) {
-          a.flyTimer = rand(3, 5);
-          for (let i = 0; i < 3; i++) state.particles.push({
-            x: a.x, y: a.y, vx: rand(-40, 40), vy: rand(-40, 40), life: 1, maxLife: 1, size: 1.2, kind: "feather", color: "#ddd", rotation: rand(0, 7), rotationSpeed: rand(-2, 2)
-          });
+        if (wasChasing || a.state !== "flee") {
+          a.state = "flee";
+          a.stateTimer = a.kind === "deer" || a.kind === "cow" ? rand(5, 8) : rand(2, 4);
+          a.panicFromX = sx; a.panicFromY = sy;
+
+          // PIGEON SCATTER: take flight with feather particles
+          if (a.kind === "pigeon" && a.flyZ < 0.1) {
+            a.flyTimer = rand(3, 6);
+            for (let i = 0; i < 4; i++) state.particles.push({
+              x: a.x, y: a.y, vx: rand(-50, 50), vy: rand(-50, 50), life: 1, maxLife: 1, size: 1.2, kind: "feather", color: "#ddd", rotation: rand(0, 7), rotationSpeed: rand(-2, 2)
+            });
+          }
+
+          // HERD PANIC: deer and cows trigger nearby same-species to flee together
+          if (a.kind === "deer" || a.kind === "cow") {
+            for (const o of state.animals) {
+              if (o === a || o.kind !== a.kind) continue;
+              if (distSq(a.x, a.y, o.x, o.y) > 220 * 220) continue;
+              if (o.state === "flee" || o.state === "attack") continue;
+              o.state = "flee";
+              o.stateTimer = rand(4, 7);
+              o.panicFromX = sx; o.panicFromY = sy;
+              // Add a slight random offset so they scatter, not clump
+              const scatter = rand(0.3, 0.8);
+              o.panicFromX += rand(-30, 30) * scatter;
+              o.panicFromY += rand(-30, 30) * scatter;
+            }
+          }
+
+          // PIGEON CLUSTER: nearby pigeons also take flight
+          if (a.kind === "pigeon") {
+            for (const o of state.animals) {
+              if (o === a || o.kind !== "pigeon") continue;
+              if (distSq(a.x, a.y, o.x, o.y) > 100 * 100) continue;
+              if (o.state === "flee") continue;
+              o.state = "flee";
+              o.stateTimer = rand(2, 4);
+              o.panicFromX = sx; o.panicFromY = sy;
+              if (o.flyZ < 0.1) { o.flyTimer = rand(3, 5); }
+            }
+          }
         }
       }
     }
 
-    // INTERACTION Logic (Dogs chase cats/pigeons, Wolves chase deer)
-    if (a.state === "wander" && Math.random() < 0.02) {
-      if (a.kind === "dog") {
-        const target = state.animals.find(o => (o.kind === "cat" || o.kind === "pigeon") && distSq(a.x, a.y, o.x, o.y) < 150 * 150);
-        if (target) { a.state = "chase"; a.targetId = target.id; a.stateTimer = 4; }
-      } else if (a.kind === "wolf") {
-        const target = state.animals.find(o => o.kind === "deer" && distSq(a.x, a.y, o.x, o.y) < 250 * 250);
-        if (target) { a.state = "chase"; a.targetId = target.id; a.stateTimer = 8; }
+    // ---- DOG: befriend player when calm and close -------------------------
+    if (a.kind === "dog" && (a.state === "wander" || a.state === "sniff") && !scared) {
+      if (dPlayer < 90 && Math.hypot(p.vx, p.vy) < 60 && state.combatTimer <= 0) {
+        a.followTimer = (a.followTimer ?? 0) + dt;
+        if (a.followTimer > 4) {
+          a.state = "follow";
+          a.stateTimer = rand(20, 40);
+          state.notifications.push({ text: "The dog likes you!", life: 2, color: "#ffe060" });
+        }
+      } else {
+        a.followTimer = 0;
       }
     }
 
-    if (a.state === "chase" || a.state === "attack") {
-      let targetPos = { x: p.x, y: p.y };
-      let isTargetingPlayer = true;
-      if (a.state === "chase") {
-        const tgt = state.animals.find(o => o.id === a.targetId);
-        if (tgt) { targetPos = { x: tgt.x, y: tgt.y }; isTargetingPlayer = false; }
-        else { a.state = "wander"; }
+    // ---- CAT: stalk nearby pigeon before pouncing ------------------------
+    if (a.kind === "cat" && a.state === "wander" && Math.random() < 0.015 * dt) {
+      const prey = state.animals.find(o => o.kind === "pigeon" && o.flyZ < 0.2 && distSq(a.x, a.y, o.x, o.y) < 130 * 130);
+      if (prey) {
+        a.state = "stalk";
+        a.targetId = prey.id;
+        a.stateTimer = rand(3, 6);
       }
+    }
 
-      if (a.state !== "wander") {
-        const angle = angleTo(a.x, a.y, targetPos.x, targetPos.y);
-        const chaseSpeedMul = a.kind === "bear" ? 0.8 : a.kind === "boar" ? 1.5 : 1.3;
-        a.vx = Math.cos(angle) * a.speed * chaseSpeedMul;
-        a.vy = Math.sin(angle) * a.speed * chaseSpeedMul;
+    // ---- DOG: bark warning before chasing prey ---------------------------
+    if (a.kind === "dog" && a.state === "wander" && Math.random() < 0.012 * dt) {
+      const prey = state.animals.find(o => (o.kind === "cat" || o.kind === "pigeon") && o.flyZ < 0.2 && distSq(a.x, a.y, o.x, o.y) < 160 * 160);
+      if (prey) {
+        a.state = "bark";
+        a.targetId = prey.id;
+        a.stateTimer = rand(0.6, 1.2);
+        state.notifications.push({ text: "Woof!", life: 1, color: "#ffe080" });
+      }
+    }
+
+    // ---- WOLF: pack hunting — sync on same deer --------------------------
+    if (a.kind === "wolf" && a.state === "wander" && Math.random() < 0.012 * dt) {
+      const prey = state.animals.find(o => o.kind === "deer" && distSq(a.x, a.y, o.x, o.y) < 280 * 280);
+      if (prey) {
+        a.state = "chase";
+        a.targetId = prey.id;
+        a.stateTimer = 10;
+        // Recruit nearby wolves to the same target (pack coordination)
+        for (const packMate of state.animals) {
+          if (packMate === a || packMate.kind !== "wolf") continue;
+          if (packMate.state !== "wander" && packMate.state !== "graze") continue;
+          if (distSq(a.x, a.y, packMate.x, packMate.y) > 240 * 240) continue;
+          packMate.state = "chase";
+          packMate.targetId = prey.id;
+          // Offset target so wolves approach from different angles (flanking)
+          packMate.stateTimer = 10;
+        }
+      }
+    }
+
+    // ---- COW / DEER: occasional graze state ------------------------------
+    if ((a.kind === "cow" || a.kind === "deer") && a.state === "wander" && a.stateTimer <= 0 && Math.random() < 0.08) {
+      a.state = "graze";
+      a.stateTimer = rand(4, 12);
+    }
+
+    // ---- STATE MACHINES --------------------------------------------------
+    if (a.state === "attack") {
+      const targetPos = { x: p.x, y: p.y };
+      const angle = angleTo(a.x, a.y, targetPos.x, targetPos.y);
+      const mul = a.kind === "bear" ? 0.85 : a.kind === "boar" ? 1.7 : 1.4;
+      a.vx = Math.cos(angle) * a.speed * mul;
+      a.vy = Math.sin(angle) * a.speed * mul;
+      a.angle = angle;
+      // Periodic bite damage with timer
+      if (dPlayer < 22) {
+        const dmg = a.kind === "bear" ? 1.2 : a.kind === "wolf" ? 0.6 : 0.4;
+        p.hp -= dmg;
+        state.damageFlash = Math.max(state.damageFlash, 0.25);
+        if (Math.random() < 0.12) spawnBlood(state, p.x, p.y);
+      }
+      if (a.stateTimer <= 0) { a.state = "wander"; a.stateTimer = rand(3, 6); }
+
+    } else if (a.state === "chase") {
+      const tgt = state.animals.find(o => o.id === a.targetId);
+      if (!tgt || tgt.hp <= 0) { a.state = "wander"; a.stateTimer = rand(2, 4); }
+      else {
+        const angle = angleTo(a.x, a.y, tgt.x, tgt.y);
+        // Wolves flank: offset the approach angle slightly based on wolf id
+        const flankOffset = a.kind === "wolf" ? ((a.id % 3) - 1) * 0.35 : 0;
+        a.vx = Math.cos(angle + flankOffset) * a.speed * 1.35;
+        a.vy = Math.sin(angle + flankOffset) * a.speed * 1.35;
         a.angle = angle;
-
-        if (isTargetingPlayer && dPlayer < 20) {
-          // Bite player
-          p.hp -= (a.kind === "bear" ? 0.8 : a.kind === "wolf" ? 0.4 : 0.3);
-          state.damageFlash = 0.2;
-          if (Math.random() < 0.1) spawnBlood(state, p.x, p.y);
+        // Scare the prey when close
+        const dPrey = dist(a.x, a.y, tgt.x, tgt.y);
+        if (dPrey < 30 && tgt.state !== "flee") {
+          tgt.state = "flee";
+          tgt.stateTimer = rand(4, 7);
+          tgt.panicFromX = a.x; tgt.panicFromY = a.y;
         }
-
-        if (a.stateTimer <= 0) a.state = "wander";
+        if (a.stateTimer <= 0) { a.state = "wander"; a.stateTimer = rand(2, 4); }
       }
+
+    } else if (a.state === "stalk") {
+      // Cat creeps slowly toward prey, low crouch (walkPhase slows)
+      const prey = state.animals.find(o => o.id === a.targetId);
+      if (!prey || prey.hp <= 0 || prey.flyZ > 0.3) { a.state = "wander"; a.stateTimer = rand(2, 5); }
+      else {
+        const angle = angleTo(a.x, a.y, prey.x, prey.y);
+        a.vx = Math.cos(angle) * a.speed * 0.18; // very slow creep
+        a.vy = Math.sin(angle) * a.speed * 0.18;
+        a.angle = angle;
+        const dPrey = dist(a.x, a.y, prey.x, prey.y);
+        if (dPrey < 28) {
+          // POUNCE — switch to chase and alert prey
+          a.state = "chase";
+          a.stateTimer = 4;
+          prey.state = "flee";
+          prey.stateTimer = rand(3, 5);
+          prey.panicFromX = a.x; prey.panicFromY = a.y;
+          if (prey.flyZ < 0.1) prey.flyTimer = rand(3, 5);
+          state.notifications.push({ text: "Cat pounces!", life: 1.2, color: "#ffcc60" });
+        }
+        if (a.stateTimer <= 0) { a.state = "wander"; a.stateTimer = rand(2, 4); }
+      }
+
+    } else if (a.state === "follow") {
+      // Dog follows player at a comfortable distance
+      if (state.combatTimer > 0 || dPlayer > 350) {
+        a.state = "flee";
+        a.stateTimer = rand(3, 5);
+        a.panicFromX = p.x; a.panicFromY = p.y;
+      } else if (a.stateTimer <= 0) {
+        a.state = "wander"; a.stateTimer = rand(4, 8);
+      } else if (dPlayer > 55) {
+        const angle = angleTo(a.x, a.y, p.x + rand(-10, 10), p.y + rand(-10, 10));
+        a.vx = Math.cos(angle) * a.speed * 0.85;
+        a.vy = Math.sin(angle) * a.speed * 0.85;
+        a.angle = angle;
+      } else {
+        a.vx *= 0.6; a.vy *= 0.6; // idle near player
+      }
+
     } else if (a.state === "bark") {
-      a.vx *= 0.8; a.vy *= 0.8;
-      if (a.stateTimer <= 0) a.state = "chase";
+      a.vx *= 0.7; a.vy *= 0.7;
+      a.angle += Math.sin(a.walkPhase * 4) * 0.15; // body wag
+      if (a.stateTimer <= 0) {
+        // After barking, start the chase
+        const prey = state.animals.find(o => o.id === a.targetId);
+        if (prey && prey.hp > 0) { a.state = "chase"; a.stateTimer = 5; }
+        else { a.state = "wander"; a.stateTimer = rand(2, 4); }
+      }
+
     } else if (a.state === "flee") {
       const angle = angleTo(a.panicFromX, a.panicFromY, a.x, a.y);
-      a.vx = Math.cos(angle) * a.speed * 1.5;
-      a.vy = Math.sin(angle) * a.speed * 1.5;
+      // Add slight wobble so animals don't flee in perfectly straight lines
+      const wob = Math.sin(a.walkPhase * 0.5) * 0.18;
+      a.vx = Math.cos(angle + wob) * a.speed * 1.6;
+      a.vy = Math.sin(angle + wob) * a.speed * 1.6;
       a.angle = angle;
-      if (a.stateTimer <= 0) a.state = "wander";
+      if (a.stateTimer <= 0) { a.state = "wander"; a.stateTimer = rand(3, 6); }
+
+    } else if (a.state === "graze") {
+      a.vx *= 0.15; a.vy *= 0.15;
+      // Slow head-bob via walkPhase variation
+      a.angle += Math.sin(a.walkPhase * 0.6) * 0.03;
+      if (a.stateTimer <= 0) { a.state = "wander"; a.stateTimer = rand(3, 7); }
+
     } else if (a.state === "sit") {
       a.vx *= 0.5; a.vy *= 0.5;
       if (a.stateTimer <= 0) a.state = "wander";
+
     } else if (a.state === "sniff") {
-      a.vx *= 0.2; a.vy *= 0.2;
-      a.angle += Math.sin(a.walkPhase * 2) * 0.1;
+      a.vx *= 0.15; a.vy *= 0.15;
+      a.angle += Math.sin(a.walkPhase * 2) * 0.12;
       if (a.stateTimer <= 0) a.state = "wander";
+
     } else {
-      // WANDER
+      // WANDER — pick a target position and slowly move toward it
       if (a.stateTimer <= 0) {
         const r = Math.random();
-        if (r < 0.1 && a.kind === "cat") { a.state = "sit"; a.stateTimer = rand(2, 6); }
-        else if (r < 0.15 && a.kind === "dog") { a.state = "sniff"; a.stateTimer = rand(1, 3); }
-        else if (r < 0.05 && a.kind === "cow") { a.state = "sit"; a.stateTimer = rand(5, 10); }
+        if (r < 0.12 && a.kind === "cat") { a.state = "sit"; a.stateTimer = rand(2, 6); }
+        else if (r < 0.18 && a.kind === "dog") { a.state = "sniff"; a.stateTimer = rand(1, 3); }
+        else if (r < 0.06 && (a.kind === "cow" || a.kind === "deer")) { a.state = "graze"; a.stateTimer = rand(5, 12); }
         else {
-          const range = a.kind === "cow" ? 30 : a.kind === "cat" ? 50 : 100;
+          const range = a.kind === "cow" ? 35 : a.kind === "deer" ? 90 : a.kind === "cat" ? 55 : 110;
           a.panicFromX = a.homeX + rand(-range, range);
           a.panicFromY = a.homeY + rand(-range, range);
-          a.stateTimer = rand(2, 5);
+          a.stateTimer = rand(2, 6);
         }
       }
-      const dx = a.panicFromX - a.x, dy = a.panicFromY - a.y;
-      const d = Math.hypot(dx, dy) || 1;
-      const moveSp = a.kind === "pigeon" ? a.speed * 0.4 * (Math.sin(a.walkPhase) > 0.5 ? 1 : 0) : a.kind === "cow" ? a.speed * 0.2 : a.speed * 0.4;
-      a.vx = (dx / d) * moveSp;
-      a.vy = (dy / d) * moveSp;
-      if (moveSp > 1) a.angle = Math.atan2(a.vy, a.vx);
 
-      if (a.kind === "pigeon" && Math.random() < 0.002 && a.flyZ < 0.1) {
-        a.flyTimer = rand(2, 4);
+      // PIGEON GROUP WANDER: pigeons loosely cluster toward nearest pigeon
+      if (a.kind === "pigeon") {
+        let gx = a.panicFromX, gy = a.panicFromY;
+        let count = 0;
+        for (const o of state.animals) {
+          if (o === a || o.kind !== "pigeon") continue;
+          if (distSq(a.x, a.y, o.x, o.y) > 100 * 100) continue;
+          gx += o.x; gy += o.y; count++;
+        }
+        if (count > 0) { gx /= count + 1; gy /= count + 1; }
+        const dx = gx - a.x, dy = gy - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const moveSp = a.speed * 0.35 * (Math.sin(a.walkPhase) > 0.5 ? 1 : 0.1);
+        a.vx = (dx / d) * moveSp;
+        a.vy = (dy / d) * moveSp;
+        if (Math.random() < 0.002 && a.flyZ < 0.1) a.flyTimer = rand(2, 5);
+      } else {
+        const dx = a.panicFromX - a.x, dy = a.panicFromY - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const moveSp = a.kind === "cow" ? a.speed * 0.18 : a.kind === "bear" ? a.speed * 0.22 : a.speed * 0.38;
+        a.vx = (dx / d) * moveSp;
+        a.vy = (dy / d) * moveSp;
+        if (moveSp > 1) a.angle = Math.atan2(a.vy, a.vx);
       }
     }
-    // Pigeon flight altitude visualization
+
+    // Pigeon flight altitude
     if (a.flyTimer > 0) {
       a.flyTimer -= dt;
       a.flyZ = Math.min(1, a.flyZ + dt * 4);
     } else {
-      a.flyZ = Math.max(0, a.flyZ - dt * 2);
+      a.flyZ = Math.max(0, a.flyZ - dt * 1.5);
     }
-    // ---- COLLISION: keep land animals OUT OF BUILDINGS ----
-    // Pigeons in flight (flyZ > 0.3) are airborne and may pass over solid
-    // tiles. Cats and dogs walk on the ground and must respect walls. We do
-    // axis-separated movement so an animal sliding along a wall keeps moving
-    // along the unblocked axis instead of getting stuck.
+
+    // ---- COLLISION: keep land animals OUT OF BUILDINGS -------------------
     const airborne = a.kind === "pigeon" && a.flyZ > 0.3;
     const nx = a.x + a.vx * dt;
     const ny = a.y + a.vy * dt;
     if (airborne) {
-      a.x = nx;
-      a.y = ny;
+      a.x = nx; a.y = ny;
     } else {
       if (!isSolidAt(world, nx, a.y)) a.x = nx;
-      else a.vx = -a.vx * 0.4; // bounce off
+      else { a.vx = -a.vx * 0.35; a.panicFromX = a.x + rand(-40, 40); }
       if (!isSolidAt(world, a.x, ny)) a.y = ny;
-      else a.vy = -a.vy * 0.4;
+      else { a.vy = -a.vy * 0.35; a.panicFromY = a.y + rand(-40, 40); }
     }
+
     // Vehicle roadkill
     for (const v of state.vehicles) {
       const sp = Math.hypot(v.vx, v.vy);
-      if (sp < 60) continue;
+      if (sp < 55) continue;
       const dvx = a.x - v.x;
       const dvy = a.y - v.y;
-      const d = Math.hypot(dvx, dvy);
-      if (d < 16 && a.flyZ < 0.3) {
+      const dHit = Math.hypot(dvx, dvy);
+      if (dHit < 18 && a.flyZ < 0.3) {
         a.hp = 0;
-        a.vx = (dvx / d) * sp * 0.5;
-        a.vy = (dvy / d) * sp * 0.5;
+        a.vx = (dvx / dHit) * sp * 0.5;
+        a.vy = (dvy / dHit) * sp * 0.5;
         a.stateTimer = 0;
-        // blood splat
         for (let f = 0; f < 6; f++) {
-          state.particles.push({
-            x: a.x,
-            y: a.y,
-            vx: rand(-60, 60),
-            vy: rand(-60, 60),
-            life: 0.6,
-            maxLife: 0.6,
-            size: 1.5,
-            kind: "blood",
-            color: "#a01818",
-            rotation: 0,
-            rotationSpeed: 0,
-          });
+          state.particles.push({ x: a.x, y: a.y, vx: rand(-60, 60), vy: rand(-60, 60), life: 0.6, maxLife: 0.6, size: 1.5, kind: "blood", color: "#a01818", rotation: 0, rotationSpeed: 0 });
         }
         if (a.kind === "dog" || a.kind === "cat") {
-          // small wanted bump for animal cruelty (if witnessed = wanted system handles this)
-          state.notifications.push({
-            text: a.kind === "dog" ? "Dog hit!" : "Cat hit!",
-            life: 1,
-            color: "#ff7070",
-          });
+          state.notifications.push({ text: a.kind === "dog" ? "🐕 Dog hit!" : "🐈 Cat hit!", life: 1.5, color: "#ff7070" });
         }
         break;
       }
     }
+
     // Bullet hits
     for (let bi = state.bullets.length - 1; bi >= 0; bi--) {
       const b = state.bullets[bi]!;
-      if (dist(a.x, a.y, b.x, b.y) < 8 && a.flyZ < 0.3) {
+      if (dist(a.x, a.y, b.x, b.y) < 9 && a.flyZ < 0.3) {
         a.hp = 0;
         a.stateTimer = 0;
         for (let f = 0; f < 5; f++) {
-          state.particles.push({
-            x: a.x,
-            y: a.y,
-            vx: rand(-40, 40),
-            vy: rand(-40, 40),
-            life: 0.6,
-            maxLife: 0.6,
-            size: 1.5,
-            kind: "blood",
-            color: "#a01818",
-            rotation: 0,
-            rotationSpeed: 0,
-          });
+          state.particles.push({ x: a.x, y: a.y, vx: rand(-40, 40), vy: rand(-40, 40), life: 0.6, maxLife: 0.6, size: 1.5, kind: "blood", color: "#a01818", rotation: 0, rotationSpeed: 0 });
         }
         state.bullets.splice(bi, 1);
         break;
       }
     }
-    // Loose world clamp
+
+    // World bounds clamp
     a.x = clamp(a.x, 8, world.pixelWidth - 8);
     a.y = clamp(a.y, 8, world.pixelHeight - 8);
   }
