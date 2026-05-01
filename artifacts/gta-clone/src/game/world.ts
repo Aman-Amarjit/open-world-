@@ -108,23 +108,35 @@ export function generateWorld(seed: number): WorldData {
   const H = MAP_TILES;
 
   // ---- DISTRICT ZONES ----
-  // Divide map into a 4×4 grid of districts (each ~20×20 tiles)
+  // 8×8 blocks of 20×20 tiles — redesigned for a believable GTA-style city.
+  //
+  //  col →  0          1          2          3          4          5          6          7
+  // row 0: forest    | forest    | forest    | forest    | forest    | forest    | forest   | forest
+  // row 1: forest    | park      | park      | residential| forest  | forest    | forest   | forest
+  // row 2: forest    | residential|commercial| commercial | residential|forest   | forest   | forest
+  // row 3: industrial| residential|commercial| downtown   | downtown  |commercial| forest   | forest
+  // row 4: industrial| residential|commercial| downtown   | downtown  |waterfront|waterfront| forest
+  // row 5: industrial| industrial |residential| commercial | waterfront|waterfront|waterfront|waterfront
+  // row 6: port      | industrial | industrial| residential| commercial|waterfront|waterfront|waterfront
+  // row 7: port      | port       | industrial| industrial | waterfront|waterfront|waterfront|waterfront
+  //
+  // Results in: large downtown core (center), residential ring around it,
+  // industrial/port on the west/south-west, large harbor bay on east/south-east,
+  // nature reserves in the north.
   const DZ = 20;
-  const DCOLS = Math.ceil(W / DZ);
-  const DROWS = Math.ceil(H / DZ);
-  const districtKinds: District[][] = [];
-  // Curated layout: bay/waterfront on the south-east, downtown center,
-  // residential outskirts, an industrial pocket, park district top-left.
+  const DCOLS = Math.ceil(W / DZ); // 8
+  const DROWS = Math.ceil(H / DZ); // 8
   const layout: District[][] = [
-    ["forest", "forest", "park", "forest", "forest", "forest", "forest", "forest"],
-    ["forest", "forest", "forest", "forest", "forest", "forest", "forest", "forest"],
-    ["forest", "forest", "forest", "forest", "forest", "forest", "forest", "forest"],
-    ["residential", "residential", "forest", "forest", "forest", "forest", "forest", "commercial"],
-    ["commercial", "residential", "forest", "forest", "forest", "forest", "residential", "waterfront"],
-    ["waterfront", "residential", "forest", "forest", "residential", "commercial", "waterfront", "waterfront"],
-    ["downtown", "downtown", "residential", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
-    ["downtown", "downtown", "residential", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
+    ["forest",      "forest",      "forest",      "forest",      "forest",      "forest",      "forest",      "forest"],
+    ["forest",      "park",        "park",        "residential", "forest",      "forest",      "forest",      "forest"],
+    ["forest",      "residential", "commercial",  "commercial",  "residential", "forest",      "forest",      "forest"],
+    ["industrial",  "residential", "commercial",  "downtown",    "downtown",    "commercial",  "forest",      "forest"],
+    ["industrial",  "residential", "commercial",  "downtown",    "downtown",    "waterfront",  "waterfront",  "forest"],
+    ["industrial",  "industrial",  "residential", "commercial",  "waterfront",  "waterfront",  "waterfront",  "waterfront"],
+    ["industrial",  "industrial",  "industrial",  "residential", "commercial",  "waterfront",  "waterfront",  "waterfront"],
+    ["industrial",  "industrial",  "industrial",  "industrial",  "waterfront",  "waterfront",  "waterfront",  "waterfront"],
   ];
+  const districtKinds: District[][] = [];
   for (let dr = 0; dr < DROWS; dr++) {
     const row: District[] = [];
     for (let dc = 0; dc < DCOLS; dc++) {
@@ -139,350 +151,359 @@ export function generateWorld(seed: number): WorldData {
     return districtKinds[dr]![dc]!;
   };
 
-  // Initialize all to grass tagged with district
+  // Initialize all to grass
   const tiles: Tile[][] = [];
   for (let y = 0; y < H; y++) {
     const row: Tile[] = [];
     for (let x = 0; x < W; x++) {
-      row.push({
-        type: "grass",
-        variant: Math.floor(rng() * 4),
-        district: districtAt(x, y),
-      });
+      row.push({ type: "grass", variant: Math.floor(rng() * 4), district: districtAt(x, y) });
     }
     tiles.push(row);
   }
 
-  // Carve a grid of roads. Major roads every 10 tiles.
-  const majorSpacing = 10;
+  // ---- ROAD GRID ----
+  // Roads every 10 tiles starting at 4 — keep this fixed (AI + story depend on it).
   const roadHorizontals: number[] = [];
   const roadVerticals: number[] = [];
-
-  for (let y = 4; y < H - 2; y += majorSpacing) {
+  for (let y = 4; y < H - 2; y += 10) {
     roadHorizontals.push(y);
-    for (let yi = 0; yi < 4; yi++) {
-      for (let x = 0; x < W; x++) {
+    for (let yi = 0; yi < 4; yi++)
+      for (let x = 0; x < W; x++)
         tiles[y + yi]![x] = { type: "road", roadDir: "h", district: districtAt(x, y + yi) };
-      }
-    }
   }
-  for (let x = 4; x < W - 2; x += majorSpacing) {
+  for (let x = 4; x < W - 2; x += 10) {
     roadVerticals.push(x);
-    for (let xi = 0; xi < 4; xi++) {
+    for (let xi = 0; xi < 4; xi++)
       for (let y = 0; y < H; y++) {
         const existing = tiles[y]![x + xi]!;
-        if (existing.type === "road") {
-          tiles[y]![x + xi] = { type: "intersection", roadDir: "x", district: districtAt(x + xi, y) };
-        } else {
-          tiles[y]![x + xi] = { type: "road", roadDir: "v", district: districtAt(x + xi, y) };
-        }
+        tiles[y]![x + xi] = existing.type === "road"
+          ? { type: "intersection", roadDir: "x", district: districtAt(x + xi, y) }
+          : { type: "road", roadDir: "v", district: districtAt(x + xi, y) };
       }
+  }
+
+  // ---- NORTH FOREST RIVER ----
+  // A natural river snaking through the northern forest only (y = 0..85).
+  // Narrower and cleaner than before (5 tiles wide, stronger curvature).
+  const RIVER_CX_BASE = 18; // horizontal center of river at y=0
+  for (let y = 0; y < H; y++) {
+    // River gradually curves east then turns south and fades; only visible in north.
+    const fade = Math.max(0, 1 - y / 80); // disappears below y=80
+    if (fade <= 0) break;
+    const cx = RIVER_CX_BASE + Math.sin(y * 0.09) * 9 + Math.cos(y * 0.04) * 5;
+    const halfW = 2; // 5-tile-wide river
+    for (let dx = -halfW; dx <= halfW; dx++) {
+      const rx = Math.round(cx + dx);
+      if (rx < 1 || rx >= W - 1) continue;
+      const onHRoad = roadHorizontals.some(hy => y >= hy && y < hy + 4);
+      const onVRoad = roadVerticals.some(vx => rx >= vx && rx < vx + 4);
+      if (onVRoad) continue; // never overwrite vertical roads
+      tiles[y]![rx] = onHRoad
+        ? { type: "road", roadDir: "h", isBridge: true, district: tiles[y]![rx]!.district }
+        : { type: "water", district: tiles[y]![rx]!.district };
     }
   }
 
-  // ---- SERPENT RIVER + BRIDGES ----
-  // Carve a snaking river from top-left to bottom-left/sea.
-  for (let x = 0; x < W; x++) {
-    // Snake equation: center Y around 40, drift left-to-right?
-    // Actually the image has it on the LEFT side.
-    const riverCenterX = 20 + Math.sin(x * 0.12) * 12 + (x < 80 ? Math.cos(x * 0.05) * 8 : 0);
-    const riverWidth = 6;
-    for (let xi = -Math.floor(riverWidth/2); xi <= Math.floor(riverWidth/2); xi++) {
-      const rx = Math.floor(riverCenterX + xi);
-      if (rx < 0 || rx >= W) continue;
-      for (let y = 0; y < H; y++) {
-        // Only apply to a specific Y range if needed, or let it run full height
-        // To match the image, it snaky mostly on the left.
-        if (x === rx) {
-          const t = tiles[y]![x]!;
-          // If this tile is part of a horizontal road, keep the road as a BRIDGE.
-          const onHorizontalRoad = roadHorizontals.some((hy) => y >= hy && y < hy + 4);
-          if (onHorizontalRoad) {
-            tiles[y]![x] = {
-              type: "road",
-              roadDir: "h",
-              isBridge: true,
-              district: t.district,
-            };
-          } else {
-            tiles[y]![x] = { type: "water", district: t.district };
-          }
-        }
-      }
-    }
-  }
+  // ---- HARBOR BAY ----
+  // Carve a large L-shaped harbor in the east/south-east quadrant.
+  // The bay's interior is determined by a simple signed-distance shape.
+  // Shape: water fills the region east of x≈100 AND south of y≈85,
+  //        with a curved inlet that reaches northwest up to about x=80, y=110.
+  const inHarbor = (tx: number, ty: number): boolean => {
+    // Main open-sea block in the far east (right edge)
+    if (tx >= 115 && ty >= 60) return true;
+    // Northern inlet arm (a narrow channel cutting west from open sea)
+    if (tx >= 95 && ty >= 60 && ty <= 90) return true;
+    // Southern bay body
+    if (tx >= 85 && ty >= 85) return true;
+    // Curved inlet: a concave bay pushed into the city
+    const inletDist = Math.hypot(tx - 80, ty - 100);
+    if (inletDist < 18 && tx > 70 && ty > 80) return true;
+    // Beach peninsula exclusion: strip of land at around x=90-100, y=100-120
+    if (tx >= 88 && tx <= 98 && ty >= 98 && ty <= 118) return false;
+    return false;
+  };
 
-  // Large Sea body on the East and South edges (Waterfront district already mostly handles this, but let's be explicit)
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      const d = districtAt(x, y);
-      if (d === "waterfront") {
-        // High chance of being actual water if near edges
-        const edgeDist = Math.min(W - 1 - x, H - 1 - y);
-        if (edgeDist < 15 || rng() < 0.7) {
-           const onRoad = roadHorizontals.some(hy => y >= hy && y < hy+4) || roadVerticals.some(vx => x >= vx && x < vx+4);
-           if (!onRoad) {
-             tiles[y]![x] = { type: "water", district: d };
-           }
-        }
+      if (!inHarbor(x, y)) continue;
+      const onHRoad = roadHorizontals.some(hy => y >= hy && y < hy + 4);
+      const onVRoad = roadVerticals.some(vx => x >= vx && x < vx + 4);
+      if (onHRoad || onVRoad) continue; // roads stay as bridges implicitly
+      tiles[y]![x] = { type: "water", district: districtAt(x, y) };
+    }
+  }
+
+  // Mark roads crossing water as bridges
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      const t = tiles[y]![x]!;
+      if (t.type !== "road" && t.type !== "intersection") continue;
+      // Check neighbors for water
+      const hasWaterNeighbor =
+        tiles[y - 1]?.[x]?.type === "water" || tiles[y + 1]?.[x]?.type === "water" ||
+        tiles[y]?.[x - 1]?.type === "water" || tiles[y]?.[x + 1]?.type === "water";
+      if (hasWaterNeighbor) {
+        tiles[y]![x] = { ...t, isBridge: true };
       }
     }
   }
 
-  // Sandy beach strip adjacent to water
+  // ---- SANDY BEACH STRIP ----
+  // One tile of sand between grass/sidewalk and any water body.
   for (let y = 1; y < H - 1; y++) {
     for (let x = 1; x < W - 1; x++) {
-      if (tiles[y]![x]!.type === "grass") {
-        const hasWater = [
-          tiles[y-1]![x]!.type, tiles[y+1]![x]!.type,
-          tiles[y]![x-1]!.type, tiles[y]![x+1]!.type
-        ].some(t => t === "water");
-        if (hasWater) {
-          tiles[y]![x] = { type: "sand", district: tiles[y]![x]!.district };
-        }
+      if (tiles[y]![x]!.type !== "grass") continue;
+      const neighbours = [
+        tiles[y-1]![x]!.type, tiles[y+1]![x]!.type,
+        tiles[y]![x-1]!.type, tiles[y]![x+1]!.type,
+      ];
+      if (neighbours.some(t => t === "water")) {
+        tiles[y]![x] = { type: "sand", district: tiles[y]![x]!.district };
       }
     }
   }
 
   // ---- SIDEWALKS ----
-  // Sidewalk strip just adjacent to every road tile (skip water shores)
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
       const cur = tiles[y]![x]!;
       if (cur.type !== "grass" && cur.type !== "sand") continue;
-      const neighbors = [
-        tiles[y - 1]?.[x]?.type,
-        tiles[y + 1]?.[x]?.type,
-        tiles[y]?.[x - 1]?.type,
-        tiles[y]?.[x + 1]?.type,
+      const nbrs = [
+        tiles[y-1]?.[x]?.type, tiles[y+1]?.[x]?.type,
+        tiles[y]?.[x-1]?.type, tiles[y]?.[x+1]?.type,
       ];
-      if (neighbors.some((n) => n === "road" || n === "intersection")) {
+      if (nbrs.some(n => n === "road" || n === "intersection")) {
         tiles[y]![x] = { type: "sidewalk", district: cur.district };
       }
     }
   }
 
-  // ---- BUILDINGS (district-aware) ----
+  // ---- PARKING LOTS ----
+  // Replace some grass blocks in commercial / industrial districts with parking.
+  // Parking blocks must be at least 2×3 to read clearly.
+  for (let by = 2; by < H - 2; by++) {
+    for (let bx = 2; bx < W - 2; bx++) {
+      if (tiles[by]![bx]!.type !== "grass") continue;
+      const d = districtAt(bx, by);
+      if (d !== "commercial" && d !== "industrial" && d !== "port") continue;
+      if (rng() > 0.18) continue; // ~18% of eligible grass becomes parking
+      // Measure block
+      let pw = 0, ph = 0;
+      while (bx + pw < W && tiles[by]![bx + pw]!.type === "grass" && pw < 6) pw++;
+      while (by + ph < H && tiles[by + ph]![bx]!.type === "grass" && ph < 4) ph++;
+      if (pw < 2 || ph < 2) continue;
+      // Only create parking if the whole measured block is grass
+      let allGrass = true;
+      for (let yi = 0; yi < ph && allGrass; yi++)
+        for (let xi = 0; xi < pw && allGrass; xi++)
+          if (tiles[by + yi]![bx + xi]!.type !== "grass") allGrass = false;
+      if (!allGrass) continue;
+      for (let yi = 0; yi < ph; yi++)
+        for (let xi = 0; xi < pw; xi++)
+          tiles[by + yi]![bx + xi] = { type: "parking", district: d };
+    }
+  }
+
+  // ---- BUILDINGS ----
   const buildings: Building[] = [];
   const palettes: Record<District, Array<{ wall: string; roof: string; window: string }>> = {
     downtown: [
-      { wall: "#3a4658", roof: "#1f2630", window: "#a8e0ff" },
-      { wall: "#2a3850", roof: "#101822", window: "#ffd87a" },
-      { wall: "#4a5066", roof: "#28304a", window: "#88c4f0" },
-      { wall: "#1f2a40", roof: "#0c1220", window: "#ffaa50" },
+      { wall: "#2e3d52", roof: "#161e2a", window: "#a8e0ff" },
+      { wall: "#243450", roof: "#0d1828", window: "#ffd87a" },
+      { wall: "#3a4a64", roof: "#1e2840", window: "#88c4f0" },
+      { wall: "#1c2840", roof: "#080e1c", window: "#ffaa50" },
+      { wall: "#304060", roof: "#182030", window: "#60d0ff" },
+      { wall: "#223858", roof: "#101c2c", window: "#ffe080" },
     ],
     commercial: [
-      { wall: "#8a4a4a", roof: "#5a2a2a", window: "#cce8ff" },
-      { wall: "#a08a70", roof: "#705a40", window: "#ffe6a0" },
-      { wall: "#5a6a7a", roof: "#3a4a5a", window: "#ffd87a" },
-      { wall: "#9a7a4a", roof: "#604020", window: "#a8d4ff" },
+      { wall: "#7a3a3a", roof: "#4a1e1e", window: "#cce8ff" },
+      { wall: "#9a7a50", roof: "#604020", window: "#ffe6a0" },
+      { wall: "#4e5e6e", roof: "#2e3e4e", window: "#ffd87a" },
+      { wall: "#8a6a3a", roof: "#50300a", window: "#a8d4ff" },
+      { wall: "#6e4a4a", roof: "#3a1a1a", window: "#d8f0ff" },
     ],
     residential: [
-      { wall: "#c8a880", roof: "#8a4a3a", window: "#ffe0a8" },
-      { wall: "#a89070", roof: "#5a3a2a", window: "#ffd890" },
-      { wall: "#b8a890", roof: "#7a4030", window: "#fff0c0" },
-      { wall: "#9aa090", roof: "#3a4a3a", window: "#fff0d0" },
-      { wall: "#d4b8a0", roof: "#7a3030", window: "#ffe5b0" },
+      { wall: "#c4a070", roof: "#7a3828", window: "#ffe0a8" },
+      { wall: "#a88060", roof: "#4a2a18", window: "#ffd890" },
+      { wall: "#b0a080", roof: "#682e20", window: "#fff0c0" },
+      { wall: "#90988a", roof: "#303e30", window: "#fff0d0" },
+      { wall: "#d0b090", roof: "#6a2828", window: "#ffe5b0" },
+      { wall: "#b8987a", roof: "#5a3020", window: "#ffd8a0" },
+      { wall: "#c8b098", roof: "#8a4830", window: "#fff2c0" },
     ],
     industrial: [
-      { wall: "#6a6258", roof: "#3a342a", window: "#88a0a0" },
-      { wall: "#5a5048", roof: "#2a241a", window: "#a0a098" },
-      { wall: "#7a6a5a", roof: "#4a3a2a", window: "#909090" },
+      { wall: "#5a5248", roof: "#2e2820", window: "#88a0a0" },
+      { wall: "#484038", roof: "#20180e", window: "#a0a098" },
+      { wall: "#686058", roof: "#382e20", window: "#909090" },
+      { wall: "#404840", roof: "#181e18", window: "#808890" },
     ],
     park: [
-      { wall: "#a89070", roof: "#604030", window: "#ffd890" },
+      { wall: "#a08860", roof: "#504020", window: "#ffd890" },
+      { wall: "#908070", roof: "#403028", window: "#e8e0b0" },
     ],
     waterfront: [
-      { wall: "#d8c8a8", roof: "#a06848", window: "#a8e0e8" },
-      { wall: "#c4b890", roof: "#7a4a2a", window: "#bfe8f0" },
+      { wall: "#d0c0a0", roof: "#906040", window: "#a8e0e8" },
+      { wall: "#c0b080", roof: "#703c18", window: "#bfe8f0" },
+      { wall: "#b8a898", roof: "#604838", window: "#c8f0e8" },
     ],
     forest: [
-      { wall: "#5a4a3a", roof: "#3a2a1a", window: "#a8d4ff" },
-      { wall: "#4a3a2a", roof: "#2a1a0a", window: "#ffd87a" },
+      { wall: "#504030", roof: "#281808", window: "#a8d4ff" },
+      { wall: "#403828", roof: "#200e00", window: "#ffd87a" },
     ],
   };
-  const neonColors = ["#ff3a8a", "#3affc8", "#ffe048", "#7a3aff", "#ff7a30", "#40e0ff"];
+  const getPalette = (d: District) => palettes[d] ?? palettes.industrial;
 
-  // District-specific build params
-  const districtParams: Record<
-    District,
-    { heightMin: number; heightMax: number; neon: number; parkChance: number; subdivide: number; buildChance: number }
-  > = {
-    downtown: { heightMin: 30, heightMax: 60, neon: 0.55, parkChance: 0.05, subdivide: 0.25, buildChance: 1 },
-    commercial: { heightMin: 16, heightMax: 32, neon: 0.45, parkChance: 0.10, subdivide: 0.45, buildChance: 1 },
-    residential: { heightMin: 8, heightMax: 18, neon: 0.05, parkChance: 0.15, subdivide: 0.65, buildChance: 1 },
-    industrial: { heightMin: 10, heightMax: 22, neon: 0.10, parkChance: 0.05, subdivide: 0.20, buildChance: 1 },
-    park: { heightMin: 8, heightMax: 16, neon: 0.05, parkChance: 0.85, subdivide: 0.30, buildChance: 1 },
-    waterfront: { heightMin: 8, heightMax: 18, neon: 0.20, parkChance: 0.30, subdivide: 0.50, buildChance: 1 },
-    forest: { heightMin: 6, heightMax: 12, neon: 0.00, parkChance: 0.95, subdivide: 0.10, buildChance: 0.15 },
+  const neonColors = ["#ff3a8a", "#3affc8", "#ffe048", "#7a3aff", "#ff7a30", "#40e0ff", "#ff5520", "#00ffaa"];
+
+  type BuildParams = { heightMin: number; heightMax: number; neon: number; parkChance: number; subdivide: number; buildChance: number; fillChance: number };
+  const districtParams: Record<District, BuildParams> = {
+    downtown:    { heightMin: 35, heightMax: 70, neon: 0.6,  parkChance: 0.04, subdivide: 0.20, buildChance: 1,    fillChance: 0.98 },
+    commercial:  { heightMin: 14, heightMax: 30, neon: 0.50, parkChance: 0.10, subdivide: 0.50, buildChance: 1,    fillChance: 0.90 },
+    residential: { heightMin: 7,  heightMax: 16, neon: 0.04, parkChance: 0.18, subdivide: 0.70, buildChance: 1,    fillChance: 0.85 },
+    industrial:  { heightMin: 10, heightMax: 24, neon: 0.08, parkChance: 0.04, subdivide: 0.20, buildChance: 1,    fillChance: 0.80 },
+    park:        { heightMin: 6,  heightMax: 12, neon: 0.04, parkChance: 0.90, subdivide: 0.25, buildChance: 0.4,  fillChance: 0.40 },
+    waterfront:  { heightMin: 8,  heightMax: 20, neon: 0.22, parkChance: 0.28, subdivide: 0.55, buildChance: 0.7,  fillChance: 0.70 },
+    forest:      { heightMin: 5,  heightMax: 10, neon: 0.00, parkChance: 0.96, subdivide: 0.05, buildChance: 0.06, fillChance: 0.06 },
   };
 
   let bid = 1;
-  const placeBuilding = (
-    bx: number,
-    by: number,
-    bw: number,
-    bh: number,
-    district: District,
-  ) => {
-    const pal = pick(palettes[district]);
+  const placeBuilding = (bx: number, by: number, bw: number, bh: number, district: District) => {
+    const pal = pick(getPalette(district));
     const params = districtParams[district];
-    const heightR = params.heightMin + Math.floor(rng() * (params.heightMax - params.heightMin));
+    const h = params.heightMin + Math.floor(rng() * (params.heightMax - params.heightMin));
     const useNeon = rng() < params.neon;
     const b: Building = {
-      id: bid++,
-      x: bx,
-      y: by,
-      w: bw,
-      h: bh,
-      color: pal.wall,
-      roofColor: pal.roof,
-      windowColor: pal.window,
-      height: heightR,
-      hasNeon: useNeon,
-      neonColor: pick(neonColors),
+      id: bid++, x: bx, y: by, w: bw, h: bh,
+      color: pal.wall, roofColor: pal.roof, windowColor: pal.window,
+      height: h, hasNeon: useNeon, neonColor: pick(neonColors),
     };
     buildings.push(b);
     for (let yi = 0; yi < bh; yi++)
-      for (let xi = 0; xi < bw; xi++) {
-        tiles[by + yi]![bx + xi] = {
-          type: "building",
-          buildingId: b.id,
-          district,
-        };
-      }
+      for (let xi = 0; xi < bw; xi++)
+        tiles[by + yi]![bx + xi] = { type: "building", buildingId: b.id, district };
   };
 
-  // Find rectangular grass blocks bounded by sidewalks
+  // Scan grass blocks and place buildings
   for (let by = 0; by < H - 2; by++) {
     for (let bx = 0; bx < W - 2; bx++) {
       if (tiles[by]![bx]!.type !== "grass") continue;
+      // Measure available rectangle
       let maxW = 0;
       while (bx + maxW < W && tiles[by]![bx + maxW]!.type === "grass" && maxW < 8) maxW++;
       let maxH = 0;
-      while (by + maxH < H && tiles[by + maxH]![bx]!.type === "grass" && maxH < 8) {
-        let fullRow = true;
+      outer: while (by + maxH < H && maxH < 8) {
         for (let xi = 0; xi < maxW; xi++) {
-          if (tiles[by + maxH]![bx + xi]!.type !== "grass") {
-            fullRow = false;
-            break;
-          }
+          if (tiles[by + maxH]![bx + xi]!.type !== "grass") break outer;
         }
-        if (!fullRow) break;
         maxH++;
       }
       if (maxW < 2 || maxH < 2) continue;
 
-      const district = districtAt(bx + Math.floor(maxW / 2), by + Math.floor(maxH / 2));
-      const params = districtParams[district];
+      const midDistrict = districtAt(bx + Math.floor(maxW / 2), by + Math.floor(maxH / 2));
+      const params = districtParams[midDistrict] ?? districtParams.forest;
 
-      // Some blocks become parks (district-tuned chance)
-      if (rng() < params.parkChance) {
-        for (let yi = 0; yi < maxH; yi++)
-          for (let xi = 0; xi < maxW; xi++) {
-            tiles[by + yi]![bx + xi] = {
-              type: "grass",
-              variant: Math.floor(rng() * 4) + 4,
-              district,
-            };
+      // Skip if this block should remain open (park/forest chance)
+      if (rng() > params.fillChance) {
+        // Make it a nice park / open area
+        if (rng() < params.parkChance) {
+          for (let yi = 0; yi < maxH; yi++)
+            for (let xi = 0; xi < maxW; xi++)
+              tiles[by + yi]![bx + xi] = { type: "grass", variant: 4 + Math.floor(rng() * 4), district: midDistrict };
+          // Plaza marker for fountain
+          if (maxW >= 3 && maxH >= 3) {
+            const cx = bx + Math.floor(maxW / 2);
+            const cy = by + Math.floor(maxH / 2);
+            tiles[cy]![cx] = { type: "plaza", district: midDistrict };
           }
-        // Plaza marker in the center for fountain placement
-        if (maxW >= 3 && maxH >= 3) {
-          const cx = bx + Math.floor(maxW / 2);
-          const cy = by + Math.floor(maxH / 2);
-          tiles[cy]![cx] = { type: "plaza", district };
         }
         continue;
       }
 
-      // Subdivide larger blocks into 2 buildings with a 1-tile alley
+      // Park blocks stay open
+      if (rng() < params.parkChance) {
+        for (let yi = 0; yi < maxH; yi++)
+          for (let xi = 0; xi < maxW; xi++)
+            tiles[by + yi]![bx + xi] = { type: "grass", variant: 4 + Math.floor(rng() * 4), district: midDistrict };
+        if (maxW >= 3 && maxH >= 3) {
+          tiles[by + Math.floor(maxH/2)]![bx + Math.floor(maxW/2)] = { type: "plaza", district: midDistrict };
+        }
+        continue;
+      }
+
+      // Subdivide wider blocks with an alley between two buildings
       if (maxW >= 5 && maxH >= 3 && rng() < params.subdivide && maxW >= maxH) {
-        const splitAt = 2 + Math.floor(rng() * (maxW - 4)); // ensure both halves ≥2
-        // left building
-        placeBuilding(bx, by, splitAt, maxH, district);
-        // alley column
-        for (let yi = 0; yi < maxH; yi++) {
-          tiles[by + yi]![bx + splitAt] = { type: "sidewalk", district };
-        }
-        // right building (skip the alley column)
-        if (maxW - splitAt - 1 >= 2) {
-          placeBuilding(bx + splitAt + 1, by, maxW - splitAt - 1, maxH, district);
-        }
+        const splitAt = 2 + Math.floor(rng() * (maxW - 4));
+        placeBuilding(bx, by, splitAt, maxH, midDistrict);
+        for (let yi = 0; yi < maxH; yi++)
+          tiles[by + yi]![bx + splitAt] = { type: "sidewalk", district: midDistrict };
+        if (maxW - splitAt - 1 >= 2)
+          placeBuilding(bx + splitAt + 1, by, maxW - splitAt - 1, maxH, midDistrict);
         continue;
       }
       if (maxH >= 5 && maxW >= 3 && rng() < params.subdivide) {
         const splitAt = 2 + Math.floor(rng() * (maxH - 4));
-        placeBuilding(bx, by, maxW, splitAt, district);
-        for (let xi = 0; xi < maxW; xi++) {
-          tiles[by + splitAt]![bx + xi] = { type: "sidewalk", district };
-        }
-        if (maxH - splitAt - 1 >= 2) {
-          placeBuilding(bx, by + splitAt + 1, maxW, maxH - splitAt - 1, district);
-        }
+        placeBuilding(bx, by, maxW, splitAt, midDistrict);
+        for (let xi = 0; xi < maxW; xi++)
+          tiles[by + splitAt]![bx + xi] = { type: "sidewalk", district: midDistrict };
+        if (maxH - splitAt - 1 >= 2)
+          placeBuilding(bx, by + splitAt + 1, maxW, maxH - splitAt - 1, midDistrict);
         continue;
       }
 
-      placeBuilding(bx, by, maxW, maxH, district);
+      placeBuilding(bx, by, maxW, maxH, midDistrict);
+    }
+  }
+
+  // ---- CENTRAL PARK LANDMARK ----
+  // Explicitly carve out a central park in the downtown area (tiles ~60-72, ~55-67).
+  // This overrides any buildings in that exact block to green space.
+  {
+    const pkX = 63, pkY = 54, pkW = 7, pkH = 7;
+    for (let yi = 0; yi < pkH; yi++) {
+      for (let xi = 0; xi < pkW; xi++) {
+        const tx = pkX + xi, ty = pkY + yi;
+        if (tiles[ty]![tx]!.type === "road" || tiles[ty]![tx]!.type === "intersection" || tiles[ty]![tx]!.type === "sidewalk") continue;
+        tiles[ty]![tx] = { type: "grass", variant: 4 + Math.floor(rng() * 4), district: "park" };
+      }
+    }
+    // Fountain in the center
+    tiles[pkY + 3]![pkX + 3] = { type: "plaza", district: "park" };
+    // Remove any building that overlapped
+    for (let i = buildings.length - 1; i >= 0; i--) {
+      const b = buildings[i]!;
+      if (b.x >= pkX && b.x < pkX + pkW && b.y >= pkY && b.y < pkY + pkH) {
+        buildings.splice(i, 1);
+      }
     }
   }
 
   // ---- ZEBRA CROSSINGS ----
-  // Place a proper crosswalk band on each of the 4 sides of every
-  // intersection. The intersection occupies tiles (rx..rx+3, ry..ry+3).
-  // Crosswalks are 1-tile-wide painted bands that span the road's full
-  // width, sitting just OUTSIDE the intersection box on each approach.
-  //
-  //                        rx rx+1 rx+2 rx+3
-  //                        │   │    │    │
-  //          ry-1 →  . . . W W W W W . . .       (W = west crosswalk approach? no)
-  //          ry   →  ─ ─ ─ I I I I I ─ ─ ─       N approach above, S approach below
-  //          ry+1 →  ─ ─ ─ I I I I I ─ ─ ─
-  //          ry+2 →  ─ ─ ─ I I I I I ─ ─ ─
-  //          ry+3 →  ─ ─ ─ I I I I I ─ ─ ─
-  //          ry+4 →  . . . S S S S S . . .       (south approach crosswalk)
-  //
-  // We replace the road tile at (rx..rx+3, ry-1) and (rx..rx+3, ry+4) with
-  // a horizontally-striped crosswalk for N/S approach, and similarly the
-  // road tile at (rx-1, ry..ry+3) and (rx+4, ry..ry+3) for E/W approach.
-  // Crosswalk tiles still act as drivable road for car physics; the render
-  // layer paints zebra stripes oriented perpendicular to the road's flow.
   for (const ry of roadHorizontals) {
     for (const rx of roadVerticals) {
       const paint = (tx: number, ty: number, dir: "h" | "v") => {
         const t = tiles[ty]?.[tx];
         if (!t) return;
         if (t.type !== "road" && t.type !== "intersection") return;
-        if (t.isBridge) return; // don't paint stripes on bridge decks
-        tiles[ty]![tx] = {
-          type: "crosswalk",
-          roadDir: dir,
-          district: t.district,
-        };
+        if (t.isBridge) return;
+        tiles[ty]![tx] = { type: "crosswalk", roadDir: dir, district: t.district };
       };
-      // North approach (above intersection — crossing the road that enters
-      // from the north). The road bands are 4 tiles wide, so the crosswalk
-      // covers the same 4 tiles.
-      for (let i = 0; i < 4; i++) paint(rx + i, ry - 1, "v");
-      // South approach
-      for (let i = 0; i < 4; i++) paint(rx + i, ry + 4, "v");
-      // West approach
-      for (let i = 0; i < 4; i++) paint(rx - 1, ry + i, "h");
-      // East approach
-      for (let i = 0; i < 4; i++) paint(rx + 4, ry + i, "h");
+      for (let i = 0; i < 4; i++) paint(rx + i, ry - 1, "v");  // north approach
+      for (let i = 0; i < 4; i++) paint(rx + i, ry + 4, "v");  // south approach
+      for (let i = 0; i < 4; i++) paint(rx - 1, ry + i, "h");  // west approach
+      for (let i = 0; i < 4; i++) paint(rx + 4, ry + i, "h");  // east approach
     }
   }
 
-  // Build a road graph for AI navigation - one node per intersection
+  // ---- ROAD GRAPH ----
   const roadGraph: RoadNode[] = [];
   const cols = roadVerticals.length;
   const rows = roadHorizontals.length;
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const ry = roadHorizontals[r]!;
-      const rx = roadVerticals[c]!;
       roadGraph.push({
-        x: (rx + 2) * TILE,
-        y: (ry + 2) * TILE,
+        x: (roadVerticals[c]! + 2) * TILE,
+        y: (roadHorizontals[r]! + 2) * TILE,
         neighbors: [],
         dir: { n: -1, e: -1, s: -1, w: -1 },
         gridCol: c,
@@ -492,135 +513,79 @@ export function generateWorld(seed: number): WorldData {
   }
   for (let i = 0; i < roadGraph.length; i++) {
     const node = roadGraph[i]!;
-    const col = node.gridCol;
-    const row = node.gridRow;
-    if (col > 0) {
-      const idx = i - 1;
-      node.neighbors.push(idx);
-      node.dir.w = idx;
-    }
-    if (col < cols - 1) {
-      const idx = i + 1;
-      node.neighbors.push(idx);
-      node.dir.e = idx;
-    }
-    if (row > 0) {
-      const idx = i - cols;
-      node.neighbors.push(idx);
-      node.dir.n = idx;
-    }
-    if (row < rows - 1) {
-      const idx = i + cols;
-      node.neighbors.push(idx);
-      node.dir.s = idx;
-    }
+    const col = node.gridCol, row = node.gridRow;
+    if (col > 0)        { node.neighbors.push(i - 1);    node.dir.w = i - 1; }
+    if (col < cols - 1) { node.neighbors.push(i + 1);    node.dir.e = i + 1; }
+    if (row > 0)        { node.neighbors.push(i - cols); node.dir.n = i - cols; }
+    if (row < rows - 1) { node.neighbors.push(i + cols); node.dir.s = i + cols; }
   }
 
-  // Sidewalk waypoints — one per sidewalk tile, used for pedestrian wandering
+  // ---- SIDEWALK WAYPOINTS ----
   const sidewalkNodes: { x: number; y: number }[] = [];
-  for (let y = 0; y < H; y++) {
-    for (let x = 0; x < W; x++) {
-      if (tiles[y]![x]!.type === "sidewalk") {
+  for (let y = 0; y < H; y++)
+    for (let x = 0; x < W; x++)
+      if (tiles[y]![x]!.type === "sidewalk")
         sidewalkNodes.push({ x: x * TILE + TILE / 2, y: y * TILE + TILE / 2 });
-      }
-    }
-  }
 
-  // ---- SHOPS (enterable buildings) ----
-  // Pick a roster of buildings spread across districts and tag them as shops.
+  // ---- SHOPS ----
   const shops: Shop[] = [];
   const shopMeta: Record<ShopKind, { name: string; color: string }> = {
-    hospital: { name: "HOSPITAL", color: "#ff5050" },
-    gun_shop: { name: "AMMU-NATION", color: "#a8e0ff" },
-    pay_n_spray: { name: "PAY 'N' SPRAY", color: "#3affc8" },
-    food: { name: "BURGER SHOT", color: "#ffd048" },
-    safehouse: { name: "SAFEHOUSE", color: "#80ff80" },
-    ammu: { name: "GUN STORE", color: "#ff7a30" },
+    hospital:  { name: "HOSPITAL",     color: "#ff5050" },
+    gun_shop:  { name: "AMMU-NATION",  color: "#a8e0ff" },
+    pay_n_spray:{ name: "PAY 'N' SPRAY",color: "#3affc8" },
+    food:      { name: "BURGER SHOT",  color: "#ffd048" },
+    safehouse: { name: "SAFEHOUSE",    color: "#80ff80" },
+    ammu:      { name: "GUN STORE",    color: "#ff7a30" },
   };
-  // For each shop kind, find a candidate building somewhere reasonable on the map
-  // (must have a sidewalk tile next to it, prefer big-enough footprint).
   const shopRoster: { kind: ShopKind; preferred: District[] }[] = [
-    { kind: "hospital", preferred: ["downtown", "commercial"] },
-    { kind: "hospital", preferred: ["residential"] },
-    { kind: "pay_n_spray", preferred: ["industrial"] },
-    { kind: "pay_n_spray", preferred: ["commercial"] },
-    { kind: "gun_shop", preferred: ["downtown"] },
-    { kind: "gun_shop", preferred: ["industrial"] },
-    { kind: "ammu", preferred: ["industrial", "commercial"] },
-    { kind: "food", preferred: ["commercial"] },
-    { kind: "food", preferred: ["downtown"] },
-    { kind: "food", preferred: ["residential"] },
-    { kind: "safehouse", preferred: ["residential"] },
-    { kind: "safehouse", preferred: ["waterfront"] },
-    { kind: "safehouse", preferred: ["residential"] },
+    { kind: "hospital",   preferred: ["downtown", "commercial"] },
+    { kind: "hospital",   preferred: ["residential"] },
+    { kind: "pay_n_spray",preferred: ["industrial"] },
+    { kind: "pay_n_spray",preferred: ["commercial"] },
+    { kind: "gun_shop",   preferred: ["downtown"] },
+    { kind: "gun_shop",   preferred: ["industrial"] },
+    { kind: "ammu",       preferred: ["industrial", "commercial"] },
+    { kind: "food",       preferred: ["commercial"] },
+    { kind: "food",       preferred: ["downtown"] },
+    { kind: "food",       preferred: ["residential"] },
+    { kind: "safehouse",  preferred: ["residential"] },
+    { kind: "safehouse",  preferred: ["waterfront"] },
+    { kind: "safehouse",  preferred: ["residential"] },
   ];
   const usedBuildings = new Set<number>();
-  const shopTiles = new Map<string, number>(); // key "x,y" → shopId
+  const shopTiles = new Map<string, number>();
   let shopId = 1;
   for (const slot of shopRoster) {
-    // Score buildings by district preference + footprint size, then take best unused.
-    let best: { b: Building; door: { x: number; y: number; facing: "n" | "e" | "s" | "w" }; score: number } | null = null;
+    let best: { b: Building; door: { x: number; y: number; facing: "n"|"e"|"s"|"w" }; score: number } | null = null;
     for (const b of buildings) {
       if (usedBuildings.has(b.id)) continue;
       if (b.w * b.h < 4) continue;
-      // Find a sidewalk tile bordering this building.
-      const candidates: Array<{ x: number; y: number; facing: "n" | "e" | "s" | "w" }> = [];
-      // North edge
-      const ny = b.y - 1;
-      if (ny >= 0) {
-        const nx = b.x + Math.floor(b.w / 2);
-        if (tiles[ny]?.[nx]?.type === "sidewalk") {
-          candidates.push({ x: nx, y: ny, facing: "n" });
-        }
-      }
-      // South edge
-      const sy = b.y + b.h;
-      if (sy < H) {
-        const sx = b.x + Math.floor(b.w / 2);
-        if (tiles[sy]?.[sx]?.type === "sidewalk") {
-          candidates.push({ x: sx, y: sy, facing: "s" });
-        }
-      }
-      // West edge
-      const wx = b.x - 1;
-      if (wx >= 0) {
-        const wy = b.y + Math.floor(b.h / 2);
-        if (tiles[wy]?.[wx]?.type === "sidewalk") {
-          candidates.push({ x: wx, y: wy, facing: "w" });
-        }
-      }
-      // East edge
-      const ex = b.x + b.w;
-      if (ex < W) {
-        const ey = b.y + Math.floor(b.h / 2);
-        if (tiles[ey]?.[ex]?.type === "sidewalk") {
-          candidates.push({ x: ex, y: ey, facing: "e" });
-        }
-      }
+      const candidates: Array<{ x: number; y: number; facing: "n"|"e"|"s"|"w" }> = [];
+      const checkDoor = (tx: number, ty: number, f: "n"|"e"|"s"|"w") => {
+        if (ty < 0 || ty >= H || tx < 0 || tx >= W) return;
+        if (tiles[ty]?.[tx]?.type === "sidewalk") candidates.push({ x: tx, y: ty, facing: f });
+      };
+      checkDoor(b.x + Math.floor(b.w / 2), b.y - 1, "n");
+      checkDoor(b.x + Math.floor(b.w / 2), b.y + b.h, "s");
+      checkDoor(b.x - 1, b.y + Math.floor(b.h / 2), "w");
+      checkDoor(b.x + b.w, b.y + Math.floor(b.h / 2), "e");
       if (candidates.length === 0) continue;
       const door = candidates[Math.floor(rng() * candidates.length)]!;
-      // Avoid placing two shops on the same sidewalk tile.
       const key = `${door.x},${door.y}`;
       if (shopTiles.has(key)) continue;
-      // Score: footprint + district preference + a tiny bit of randomness.
       const dist = tiles[b.y]?.[b.x]?.district;
       const distBonus = dist && slot.preferred.includes(dist) ? 100 : 0;
       const score = b.w * b.h + distBonus + rng() * 5;
-      if (!best || score > best.score) {
-        best = { b, door, score };
-      }
+      if (!best || score > best.score) best = { b, door, score };
     }
     if (!best) continue;
     const meta = shopMeta[slot.kind];
     const shop: Shop = {
-      id: shopId++,
-      kind: slot.kind,
-      name: meta.name,
+      id: shopId++, kind: slot.kind, name: meta.name,
       buildingId: best.b.id,
       doorX: best.door.x * TILE + TILE / 2,
       doorY: best.door.y * TILE + TILE / 2,
-      facing: best.door.facing,
-      color: meta.color,
+      facing: best.door.facing, color: meta.color,
     };
     shops.push(shop);
     best.b.shopId = shop.id;
@@ -629,17 +594,10 @@ export function generateWorld(seed: number): WorldData {
   }
 
   return {
-    tiles,
-    buildings,
-    shops,
-    roadGraph,
-    sidewalkNodes,
-    roadHorizontals,
-    roadVerticals,
-    width: W,
-    height: H,
-    pixelWidth: W * TILE,
-    pixelHeight: H * TILE,
+    tiles, buildings, shops, roadGraph, sidewalkNodes,
+    roadHorizontals, roadVerticals,
+    width: W, height: H,
+    pixelWidth: W * TILE, pixelHeight: H * TILE,
   };
 }
 
@@ -661,22 +619,15 @@ export function findNearestRoad(
   px: number,
   py: number,
 ): { x: number; y: number } {
-  // Try the player's tile and outward rings
-  for (let r = 0; r < 8; r++) {
+  for (let r = 0; r < 10; r++) {
     for (let dx = -r; dx <= r; dx++) {
       for (let dy = -r; dy <= r; dy++) {
         if (Math.abs(dx) !== r && Math.abs(dy) !== r) continue;
         const nx = px + dx * TILE;
         const ny = py + dy * TILE;
         const t = tileAt(world, nx, ny);
-        if (
-          t &&
-          (t.type === "road" ||
-            t.type === "intersection" ||
-            t.type === "crosswalk")
-        ) {
+        if (t && (t.type === "road" || t.type === "intersection" || t.type === "crosswalk"))
           return { x: nx, y: ny };
-        }
       }
     }
   }
