@@ -295,6 +295,7 @@ export interface DialogueLine {
   color: string;
   text: string;
   side: "left" | "right";
+  isNarration?: boolean;
 }
 
 export interface StoryCutscene {
