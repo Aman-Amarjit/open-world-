@@ -1,4 +1,4 @@
-import type { GameState } from "@/game/types";
+import type { GameState, WeaponKind } from "@/game/types";
 import type { WorldData, ShopKind } from "@/game/world";
 
 interface Props {
@@ -428,16 +428,18 @@ export function HUD({ state, world }: Props) {
             <div className="wheel-center">
               <div className="wheel-center-label">{state.player.weapon.toUpperCase()}</div>
             </div>
-            {[
-              { kind: "fist", icon: "👊" },
-              { kind: "pistol", icon: "🔫" },
-              { kind: "smg", icon: "📟" },
-              { kind: "shotgun", icon: "🎒" },
-              { kind: "rifle", icon: "🏹" },
-              { kind: "sniper", icon: "🔭" },
-              { kind: "rpg", icon: "🚀" },
-              { kind: "flamethrower", icon: "🔥" },
-            ].map((w, i, arr) => {
+            {(
+              [
+                { kind: "fist" as WeaponKind, icon: "👊" },
+                { kind: "pistol" as WeaponKind, icon: "🔫" },
+                { kind: "smg" as WeaponKind, icon: "📟" },
+                { kind: "shotgun" as WeaponKind, icon: "🎒" },
+                { kind: "rifle" as WeaponKind, icon: "🏹" },
+                { kind: "sniper" as WeaponKind, icon: "🔭" },
+                { kind: "rpg" as WeaponKind, icon: "🚀" },
+                { kind: "flamethrower" as WeaponKind, icon: "🔥" },
+              ] as { kind: WeaponKind; icon: string }[]
+            ).map((w, i, arr) => {
               const angle = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
               const x = 250 + Math.cos(angle) * 180;
               const y = 250 + Math.sin(angle) * 180;
@@ -447,7 +449,7 @@ export function HUD({ state, world }: Props) {
                   className={`wheel-item ${state.player.weapon === w.kind ? "active" : ""}`}
                   style={{ left: x, top: y }}
                   onClick={() => {
-                    state.player.weapon = w.kind as any;
+                    state.player.weapon = w.kind;
                     state.input.weaponWheelOpen = false;
                   }}
                 >
