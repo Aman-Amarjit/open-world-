@@ -336,6 +336,27 @@ export function drawCar(
     ctx.fillRect(0, -2.5, 3, 5);
   }
 
+  // Spoiler for sports cars
+  if (v.kind === "sports" && v.visualVariant > 0.4) {
+    ctx.fillStyle = shadeHex(bodyColor, -15);
+    ctx.fillRect(-halfL + 1, -halfW + 2, 2.5, W - 4); // main wing
+    ctx.fillStyle = shadeHex(bodyColor, -35);
+    ctx.fillRect(-halfL + 1, -halfW + 2, 0.8, 1.5); // strut L
+    ctx.fillRect(-halfL + 1, halfW - 3.5, 0.8, 1.5); // strut R
+  }
+
+  // Rust patches for trucks
+  if (v.kind === "truck" && v.visualVariant > 0.6) {
+    ctx.fillStyle = "rgba(100, 60, 20, 0.4)";
+    for (let i = 0; i < 3; i++) {
+      const rx = -halfL + (v.visualVariant * 100 + i * 20) % L;
+      const ry = -halfW + (v.visualVariant * 200 + i * 15) % W;
+      ctx.beginPath();
+      ctx.arc(rx, ry, 2, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
   // Damage overlay
   if (v.damage > 0.3) {
     ctx.fillStyle = `rgba(40,40,40,${0.3 * v.damage})`;

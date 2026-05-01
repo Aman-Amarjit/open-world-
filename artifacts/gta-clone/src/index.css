@@ -625,3 +625,87 @@ html, body, #root {
   margin: 10px 0 0;
   color: #a8b4c4;
 }
+/* Weapon Wheel ==================== */
+.hud-weapon-wheel {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(circle, rgba(0,0,0,0.4) 0%, rgba(0,0,0,0.85) 100%);
+  z-index: 100;
+  pointer-events: auto;
+  backdrop-filter: blur(8px);
+  animation: wheel-fade-in 0.2s ease-out;
+}
+
+@keyframes wheel-fade-in {
+  from { opacity: 0; transform: scale(1.1); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.wheel-container {
+  position: relative;
+  width: 500px;
+  height: 500px;
+}
+
+.wheel-item {
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  margin-left: -50px;
+  margin-top: -50px;
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, rgba(40, 44, 55, 0.9), rgba(20, 22, 30, 0.95));
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.15s ease-out;
+  cursor: pointer;
+  color: #fff;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5);
+}
+
+.wheel-item:hover, .wheel-item.active {
+  transform: scale(1.15);
+  background: linear-gradient(135deg, rgba(60, 120, 255, 0.9), rgba(30, 60, 180, 0.95));
+  border-color: #7ad0ff;
+  box-shadow: 0 0 25px rgba(60, 120, 255, 0.6);
+  z-index: 10;
+}
+
+.wheel-item.active {
+  border-width: 3px;
+  box-shadow: 0 0 35px rgba(60, 255, 120, 0.5);
+}
+
+.wheel-item-icon {
+  font-size: 24px;
+  margin-bottom: 4px;
+}
+
+.wheel-item-label {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.wheel-center {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  text-align: center;
+}
+
+.wheel-center-label {
+  font-size: 32px;
+  color: #7ad0ff;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  text-shadow: 0 0 20px rgba(60, 120, 255, 0.8);
+}

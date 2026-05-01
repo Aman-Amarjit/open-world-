@@ -1,8 +1,8 @@
 // Physics + collision
 import type { GameState, Vehicle, Human, Particle, SkidMark } from "./types";
 import type { WorldData } from "./world";
-import { isSolidAt } from "./world";
-import { clamp, lerpAngle, dist, distSq, rand } from "./utils";
+import { isSolidAt, TILE } from "./world";
+import { clamp, lerpAngle, dist, distSq, rand, canSee } from "./utils";
 
 export const PLAYER_FRICTION = 4.0;
 export const VEHICLE_FRICTION = 1.5;
@@ -620,6 +620,127 @@ export function addScore(state: GameState, n: number, msg?: string) {
 }
 
 export function raiseWanted(state: GameState, n: number) {
+  const oldLevel = state.wantedLevel;
   state.wantedLevel = Math.min(6, state.wantedLevel + n);
   state.wantedDecayTimer = 30;
+  state.lastKnownPlayerPos = { x: state.player.x, y: state.player.y };
+  
+  // Visual feedback for wanted level increase
+  if (state.wantedLevel > oldLevel) {
+    state.notifications.push({
+      text: state.wantedLevel >= 4 ? "WANTED!" : state.wantedLevel >= 2 ? "Police alerted!" : "Heat detected!",
+      life: 1.5,
+      color: state.wantedLevel >= 4 ? "#ff3030" : state.wantedLevel >= 2 ? "#ff8030" : "#ffa030"
+    });
+  }
 }
+
+export function raiseWantedIfWitnessed(state: GameState, n: number) {
+  const p = state.player;
+  let witnessed = false;
+  for (const h of state.humans) {
+    if (h.isPlayer || h.hp <= 0) continue;
+    if (h.kind === "police" && distSq(h.x, h.y, p.x, p.y) < 400 * 400) {
+      if (canSee(h.x, h.y, h.angle, p.x, p.y, 1.2)) {
+        witnessed = true;
+        break;
+      }
+    }
+    // Civilians also witness
+    if (h.kind === "pedestrian" && distSq(h.x, h.y, p.x, p.y) < 250 * 250) {
+      if (canSee(h.x, h.y, h.angle, p.x, p.y, 1.0)) {
+        witnessed = true;
+        // Ped enters witness state
+        h.aiState = "witness";
+        h.witnessTimer = 8;
+        h.witnessCrimePos = { x: p.x, y: p.y };
+        break;
+      }
+    }
+  }
+  if (witnessed) {
+    raiseWanted(state, n);
+  }
+}
+
+// Check if player is in a vehicle (for wanted decay bonus)
+function isInVehicle(state: GameState): boolean {
+  return state.player.inVehicle !== null;
+}
+
+// Check if player is in an alley/covered area (faster wanted decay)
+function isInCover(state: GameState, world: WorldData): boolean {
+  const tx = Math.floor(state.player.x / TILE);
+  const ty = Math.floor(state.player.y / TILE);
+  const tile = world.tiles[ty]?.[tx];
+  if (!tile) return false;
+  
+  // Alleys are narrow sidewalk areas between buildings
+  // Check surrounding tiles for buildings
+  let buildingCount = 0;
+  for (let dy = -1; dy <= 1; dy++) {
+    for (let dx = -1; dx <= 1; dx++) {
+      if (dx === 0 && dy === 0) continue;
+      const neighbor = world.tiles[ty + dy]?.[tx + dx];
+      if (neighbor?.type === "building") buildingCount++;
+    }
+  }
+  // More buildings around = better cover
+  return buildingCount >= 4;
+}
+
+// Check if player is near a pay 'n' spray (instant wanted reduction)
+function checkPayNSpray(state: GameState, world: WorldData): boolean {
+  for (const shop of world.shops) {
+    if (shop.kind === "pay_n_spray") {
+      const d = Math.sqrt(distSq(state.player.x, state.player.y, shop.doorX, shop.doorY));
+      if (d < 80) return true;
+    }
+  }
+  return false;
+}
+
+// Enhanced wanted decay with contextual bonuses
+export function updateWantedDecay(state: GameState, dt: number, world: WorldData) {
+  if (state.wantedLevel === 0 || state.combatTimer > 0) return;
+  
+  // Base decay time
+  let decayTime = 30;
+  let decayAmount = 1;
+  
+  // In vehicle = slower decay (police can chase better)
+  if (isInVehicle(state)) {
+    decayTime = 45;
+  }
+  
+  // In cover = faster decay
+  if (isInCover(state, world)) {
+    decayTime = 20;
+    decayAmount = 1;
+  }
+  
+  // Near pay 'n' spray = rapid decay
+  if (checkPayNSpray(state, world)) {
+    decayTime = 5;
+    decayAmount = Math.min(2, state.wantedLevel);
+  }
+  
+  // Higher wanted levels take longer to decay
+  decayTime *= 1 + (state.wantedLevel * 0.15);
+  
+  state.wantedDecayTimer -= dt;
+  if (state.wantedDecayTimer <= 0) {
+    state.wantedLevel = Math.max(0, state.wantedLevel - decayAmount);
+    state.wantedDecayTimer = decayTime;
+    
+    // Notification for decay
+    if (state.wantedLevel > 0) {
+      state.notifications.push({
+        text: state.wantedLevel === 0 ? "Busted!" : `Heat cooling... (${state.wantedLevel}★)`,
+        life: 1.0,
+        color: state.wantedLevel === 0 ? "#30c870" : "#a0a0a0"
+      });
+    }
+  }
+}
+

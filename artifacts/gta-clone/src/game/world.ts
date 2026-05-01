@@ -2,7 +2,7 @@
 import { mulberry32, rand, randInt, pick } from "./utils";
 
 export const TILE = 64; // px per tile
-export const MAP_TILES = 80; // 80x80 tiles = 5120x5120 px world
+export const MAP_TILES = 160; // 160x160 tiles = 10240x10240 px world
 
 export type TileType =
   | "road"
@@ -24,7 +24,8 @@ export type District =
   | "residential"
   | "industrial"
   | "park"
-  | "waterfront";
+  | "waterfront"
+  | "forest";
 
 export interface Tile {
   type: TileType;
@@ -115,10 +116,14 @@ export function generateWorld(seed: number): WorldData {
   // Curated layout: bay/waterfront on the south-east, downtown center,
   // residential outskirts, an industrial pocket, park district top-left.
   const layout: District[][] = [
-    ["park",        "residential", "commercial", "downtown"],
-    ["residential", "downtown",    "downtown",   "commercial"],
-    ["residential", "commercial",  "downtown",   "industrial"],
-    ["park",        "residential", "industrial", "waterfront"],
+    ["forest", "forest", "park", "residential", "commercial", "downtown", "downtown", "commercial"],
+    ["forest", "forest", "residential", "residential", "downtown", "downtown", "commercial", "industrial"],
+    ["park", "residential", "residential", "downtown", "downtown", "commercial", "industrial", "industrial"],
+    ["residential", "residential", "downtown", "downtown", "commercial", "commercial", "industrial", "waterfront"],
+    ["residential", "commercial", "downtown", "downtown", "commercial", "waterfront", "waterfront", "waterfront"],
+    ["commercial", "commercial", "commercial", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
+    ["park", "park", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
+    ["forest", "forest", "forest", "waterfront", "waterfront", "waterfront", "waterfront", "waterfront"],
   ];
   for (let dr = 0; dr < DROWS; dr++) {
     const row: District[] = [];
@@ -261,6 +266,10 @@ export function generateWorld(seed: number): WorldData {
       { wall: "#d8c8a8", roof: "#a06848", window: "#a8e0e8" },
       { wall: "#c4b890", roof: "#7a4a2a", window: "#bfe8f0" },
     ],
+    forest: [
+      { wall: "#5a4a3a", roof: "#3a2a1a", window: "#a8d4ff" },
+      { wall: "#4a3a2a", roof: "#2a1a0a", window: "#ffd87a" },
+    ],
   };
   const neonColors = ["#ff3a8a", "#3affc8", "#ffe048", "#7a3aff", "#ff7a30", "#40e0ff"];
 
@@ -269,12 +278,13 @@ export function generateWorld(seed: number): WorldData {
     District,
     { heightMin: number; heightMax: number; neon: number; parkChance: number; subdivide: number; buildChance: number }
   > = {
-    downtown:    { heightMin: 30, heightMax: 60, neon: 0.55, parkChance: 0.05, subdivide: 0.25, buildChance: 1 },
-    commercial:  { heightMin: 16, heightMax: 32, neon: 0.45, parkChance: 0.10, subdivide: 0.45, buildChance: 1 },
-    residential: { heightMin: 8,  heightMax: 18, neon: 0.05, parkChance: 0.15, subdivide: 0.65, buildChance: 1 },
-    industrial:  { heightMin: 10, heightMax: 22, neon: 0.10, parkChance: 0.05, subdivide: 0.20, buildChance: 1 },
-    park:        { heightMin: 8,  heightMax: 16, neon: 0.05, parkChance: 0.85, subdivide: 0.30, buildChance: 1 },
-    waterfront:  { heightMin: 8,  heightMax: 18, neon: 0.20, parkChance: 0.30, subdivide: 0.50, buildChance: 1 },
+    downtown: { heightMin: 30, heightMax: 60, neon: 0.55, parkChance: 0.05, subdivide: 0.25, buildChance: 1 },
+    commercial: { heightMin: 16, heightMax: 32, neon: 0.45, parkChance: 0.10, subdivide: 0.45, buildChance: 1 },
+    residential: { heightMin: 8, heightMax: 18, neon: 0.05, parkChance: 0.15, subdivide: 0.65, buildChance: 1 },
+    industrial: { heightMin: 10, heightMax: 22, neon: 0.10, parkChance: 0.05, subdivide: 0.20, buildChance: 1 },
+    park: { heightMin: 8, heightMax: 16, neon: 0.05, parkChance: 0.85, subdivide: 0.30, buildChance: 1 },
+    waterfront: { heightMin: 8, heightMax: 18, neon: 0.20, parkChance: 0.30, subdivide: 0.50, buildChance: 1 },
+    forest: { heightMin: 6, heightMax: 12, neon: 0.00, parkChance: 0.95, subdivide: 0.10, buildChance: 0.15 },
   };
 
   let bid = 1;
@@ -490,29 +500,29 @@ export function generateWorld(seed: number): WorldData {
   // Pick a roster of buildings spread across districts and tag them as shops.
   const shops: Shop[] = [];
   const shopMeta: Record<ShopKind, { name: string; color: string }> = {
-    hospital:    { name: "HOSPITAL",     color: "#ff5050" },
-    gun_shop:    { name: "AMMU-NATION",  color: "#a8e0ff" },
+    hospital: { name: "HOSPITAL", color: "#ff5050" },
+    gun_shop: { name: "AMMU-NATION", color: "#a8e0ff" },
     pay_n_spray: { name: "PAY 'N' SPRAY", color: "#3affc8" },
-    food:        { name: "BURGER SHOT",  color: "#ffd048" },
-    safehouse:   { name: "SAFEHOUSE",    color: "#80ff80" },
-    ammu:        { name: "GUN STORE",    color: "#ff7a30" },
+    food: { name: "BURGER SHOT", color: "#ffd048" },
+    safehouse: { name: "SAFEHOUSE", color: "#80ff80" },
+    ammu: { name: "GUN STORE", color: "#ff7a30" },
   };
   // For each shop kind, find a candidate building somewhere reasonable on the map
   // (must have a sidewalk tile next to it, prefer big-enough footprint).
   const shopRoster: { kind: ShopKind; preferred: District[] }[] = [
-    { kind: "hospital",    preferred: ["downtown", "commercial"] },
-    { kind: "hospital",    preferred: ["residential"] },
+    { kind: "hospital", preferred: ["downtown", "commercial"] },
+    { kind: "hospital", preferred: ["residential"] },
     { kind: "pay_n_spray", preferred: ["industrial"] },
     { kind: "pay_n_spray", preferred: ["commercial"] },
-    { kind: "gun_shop",    preferred: ["downtown"] },
-    { kind: "gun_shop",    preferred: ["industrial"] },
-    { kind: "ammu",        preferred: ["industrial", "commercial"] },
-    { kind: "food",        preferred: ["commercial"] },
-    { kind: "food",        preferred: ["downtown"] },
-    { kind: "food",        preferred: ["residential"] },
-    { kind: "safehouse",   preferred: ["residential"] },
-    { kind: "safehouse",   preferred: ["waterfront"] },
-    { kind: "safehouse",   preferred: ["residential"] },
+    { kind: "gun_shop", preferred: ["downtown"] },
+    { kind: "gun_shop", preferred: ["industrial"] },
+    { kind: "ammu", preferred: ["industrial", "commercial"] },
+    { kind: "food", preferred: ["commercial"] },
+    { kind: "food", preferred: ["downtown"] },
+    { kind: "food", preferred: ["residential"] },
+    { kind: "safehouse", preferred: ["residential"] },
+    { kind: "safehouse", preferred: ["waterfront"] },
+    { kind: "safehouse", preferred: ["residential"] },
   ];
   const usedBuildings = new Set<number>();
   const shopTiles = new Map<string, number>(); // key "x,y" → shopId

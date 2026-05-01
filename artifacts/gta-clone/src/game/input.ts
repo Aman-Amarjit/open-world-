@@ -43,6 +43,9 @@ export function setupInput(state: GameState, canvas: HTMLCanvasElement) {
       case "Escape":
         state.paused = !state.paused;
         break;
+      case "KeyQ":
+        inp.weaponWheelOpen = !inp.weaponWheelOpen;
+        break;
     }
   };
   const onKeyUp = (e: KeyboardEvent) => {

@@ -2,7 +2,7 @@
 import type { GameState, Human, Vehicle } from "./types";
 import type { WorldData, RoadNode } from "./world";
 import { TILE, isSolidAt, tileAt } from "./world";
-import { angleTo, clamp, dist, distSq, lerpAngle, rand } from "./utils";
+import { angleTo, clamp, dist, distSq, lerpAngle, rand, canSee, pick } from "./utils";
 import { raiseWanted } from "./physics";
 import { audioEngine } from "./audio";
 
@@ -152,6 +152,19 @@ function updatePedestrian(
 ) {
   const player = state.player;
 
+  // ---- CHAT state ---------------------------------------------------------
+  // Two peds stop to talk for a few seconds.
+  if (h.aiState === "idle" && h.chatTimer > 0) {
+    h.chatTimer -= dt;
+    h.vx *= 0.2;
+    h.vy *= 0.2;
+    if (h.chatTimer <= 0) {
+      h.aiState = "wander";
+      h.aiTimer = rand(2, 5);
+    }
+    return;
+  }
+
   // ---- GAWK: stop and stare at a fresh corpse, then panic-flee from it -----
   // A "fresh" corpse is one currently in its death animation (deathAnim 0..1).
   // Civilians who already saw a corpse don't re-trigger (witnessTimer stops them).
@@ -295,24 +308,50 @@ function updatePedestrian(
   // ---- DODGE oncoming cars ----------------------------------------------
   for (const v of state.vehicles) {
     const sp = Math.hypot(v.vx, v.vy);
-    if (sp < 30) continue; // even slow-moving cars are noticed now
+    if (sp < 30) continue; 
     const dx = h.x - v.x;
     const dy = h.y - v.y;
     const d = Math.hypot(dx, dy);
     if (d > SWERVE_DETECT) continue;
-    // Is the ped roughly in front of the car? Wider acceptance cone (0.35
-    // ~= 70°) so peds dodge cars approaching at an angle, not just dead-on.
     const fwdDot = (dx * v.vx + dy * v.vy) / (sp * (d || 1));
     if (fwdDot < 0.35) continue;
-    // Sidestep perpendicular to car velocity
+    
+    // Reactive: jump back and shout if car is very fast and close
+    if (sp > 150 && d < 60) {
+      const away = angleTo(v.x, v.y, h.x, h.y);
+      h.vx = Math.cos(away) * h.speed * 4;
+      h.vy = Math.sin(away) * h.speed * 4;
+      h.aiTimer = 0.5; // brief stun
+      if (Math.random() < 0.3) {
+        state.notifications.push({ text: pick(["Watch it!", "Hey!", "Stupid driver!"]), life: 1, color: "#fff" });
+      }
+      return;
+    }
+
     const px = -v.vy / sp;
     const py = v.vx / sp;
-    // Choose side that moves away from car
     const sign = px * dx + py * dy >= 0 ? 1 : -1;
     h.vx = px * sign * h.speed * 1.8;
     h.vy = py * sign * h.speed * 1.8;
     h.walkPhase += dt * 18;
     return;
+  }
+
+  // ---- SOCIAL CHANCE ----
+  if (h.aiState === "wander" && Math.random() < 0.005 * dt) {
+    for (const o of state.humans) {
+      if (o === h || o.kind !== "pedestrian" || o.aiState !== "wander") continue;
+      if (distSq(h.x, h.y, o.x, o.y) < 40 * 40) {
+        h.aiState = "idle";
+        h.chatTimer = rand(3, 6);
+        o.aiState = "idle";
+        o.chatTimer = h.chatTimer;
+        // Face each other
+        h.angle = angleTo(h.x, h.y, o.x, o.y);
+        o.angle = angleTo(o.x, o.y, h.x, h.y);
+        return;
+      }
+    }
   }
 
   // ---- WANDER on sidewalks ----------------------------------------------
@@ -373,8 +412,15 @@ function updatePedestrian(
           h.vy *= 0.2;
           return;
         }
+      } else if (stepTile && (stepTile.type === "road" || stepTile.type === "intersection")) {
+        // Not a crosswalk but trying to step on road? Force a re-path immediately.
+        h.aiTimer = 0;
+        h.vx *= 0.2;
+        h.vy *= 0.2;
+        return;
       }
-      const sp = h.speed * (Math.random() < 0.1 ? 0.3 : 0.6); // occasional slowdowns
+      const spMul = h.behavior === "jogger" ? 1.6 : h.behavior === "slow" ? 0.4 : 0.6;
+      const sp = h.speed * (Math.random() < 0.1 ? 0.3 : spMul);
       h.vx = Math.cos(a) * sp;
       h.vy = Math.sin(a) * sp;
     }
@@ -408,7 +454,8 @@ function pickSidewalkPath(h: Human, world: WorldData) {
       t.type === "sidewalk" ||
       t.type === "plaza" ||
       t.type === "grass" ||
-      t.type === "crosswalk"
+      t.type === "crosswalk" ||
+      t.type === "sand"
     );
   };
   const sampleSegmentOk = (ax: number, ay: number, bx: number, by: number) => {
@@ -684,10 +731,40 @@ function updateCop(
 
   if (state.wantedLevel > 0) {
     h.aiState = "chase";
+  } else if (state.lastKnownPlayerPos && state.wantedLevel > 0) {
+    // If no direct sight, go to last known pos
+    h.aiState = "chase";
   }
 
   if (h.aiState === "chase" || h.aiState === "cover") {
-    // SQUAD COORDINATION — assign each on-foot cop a tactical role:
+    // ---- VISIBILITY CHECK ----
+    const canSeeP = canSee(h.x, h.y, h.angle, player.x, player.y, 1.4) && dToPlayer < 500;
+    if (canSeeP) {
+      state.lastKnownPlayerPos = { x: player.x, y: player.y };
+      state.policeSearchTimer = 10; // reset search timer
+    }
+
+    let targetX = player.x;
+    let targetY = player.y;
+    let preferredDist = COP_GUN_RANGE * 0.5;
+
+    // SEARCH logic: if player is not visible, move toward last known pos
+    if (!canSeeP && state.lastKnownPlayerPos) {
+      targetX = state.lastKnownPlayerPos.x;
+      targetY = state.lastKnownPlayerPos.y;
+      preferredDist = 20; // get close to the spot
+      if (distSq(h.x, h.y, targetX, targetY) < 40 * 40) {
+        // At the spot but can't see player? Wander nearby.
+        if (h.aiTimer <= 0) {
+          h.aiTargetX = targetX + rand(-150, 150);
+          h.aiTargetY = targetY + rand(-150, 150);
+          h.aiTimer = rand(2, 4);
+        }
+        targetX = h.aiTargetX;
+        targetY = h.aiTargetY;
+      }
+    } else {
+      // SQUAD COORDINATION (only if seen)
     //   role 0 = suppressor (stay back, lay down fire)
     //   role 1 = flanker (circle around for crossfire)
     //   role 2 = cutoff (block the player's predicted exit direction)
@@ -766,6 +843,7 @@ function updateCop(
       targetX = player.x + Math.cos(approachA + Math.PI) * 80;
       targetY = player.y + Math.sin(approachA + Math.PI) * 80;
     }
+  }
 
     // BUST if close on foot. At 1-3 stars cops want to ARREST you, not kill,
     // so the bust radius is generous and they only need you to be roughly
@@ -913,6 +991,13 @@ function updateDriverAI(
     return;
   }
 
+  // Update blockedTimer - if throttle is requested but speed is near zero.
+  if (Math.abs(v.throttle) > 0.1 && speed < 8) {
+    v.blockedTimer += dt;
+  } else {
+    v.blockedTimer = Math.max(0, v.blockedTimer - dt * 2);
+  }
+
   // POLICE chasing player
   if (h.kind === "police" && state.wantedLevel > 0) {
     drivePolicePursuit(h, v, dt, world, state);
@@ -1015,51 +1100,60 @@ function driveCivilian(
     const dot = (dx * fwdX + dy * fwdY) / (d || 1);
     if (dot > 0.5 && d < frontObstacle) frontObstacle = d;
   }
-  // Following distance widened: a car body is ~40 px so the old 30 px
-  // full-brake threshold meant cars overlapped the vehicle ahead. New
-  // thresholds (50 / 85) leave a proper gap and prevent pile-ups.
-  if (frontObstacle < 50) {
+  // Following distance calibrated: a car body is ~40 px. New thresholds (50 / 85) 
+  // leave a proper gap and prevent pile-ups or visual overlapping when stopped.
+  const followDist = v.drivingStyle === "aggressive" ? 42 : v.drivingStyle === "cautious" ? 75 : 55;
+  const slowDist = v.drivingStyle === "aggressive" ? 68 : v.drivingStyle === "cautious" ? 120 : 90;
+
+  if (frontObstacle < followDist) {
     throttle = 0;
     brake = 1;
-    // When stopped close behind another car, STRAIGHTEN the wheels —
-    // otherwise we keep steering toward the next waypoint and nose
-    // diagonally out of our lane, causing the staircase pile-up look.
     v.steer = 0;
-    // Per-second honk rate (~1/s), not per-frame. The old `< 0.05` triggered
-    // about three times a second at 60fps, which was a constant beep storm.
-    if (v.honkTimer <= 0 && Math.random() < 1.0 * dt) v.honkTimer = 0.6;
-  } else if (frontObstacle < 85) {
-    throttle = 0.15;
-    brake = 0.4;
-    // Crawling — partially damp the steering toward the waypoint so we
-    // ease into the queue straight rather than veering sideways.
+    
+    // OVERTAKING: if stuck behind a slow car, try to swerve
+    if (v.drivingStyle !== "cautious" && sp < 10 && frontObstacle > 20) {
+      // Check if we can swerve left (typical overtaking side)
+      v.steer = -0.6;
+      v.throttle = 0.3;
+    }
+
+    if (v.honkTimer <= 0 && Math.random() < (v.drivingStyle === "aggressive" ? 2.5 : 1.0) * dt) v.honkTimer = 0.6;
+  } else if (frontObstacle < slowDist) {
+    throttle = v.drivingStyle === "aggressive" ? 0.3 : 0.15;
+    brake = v.drivingStyle === "aggressive" ? 0.2 : 0.4;
     v.steer *= 0.4;
   }
 
   // Approach intersection — if there's perpendicular traffic close, yield.
-  // We also pre-emptively coast (no full stop) if we're inside the
-  // intersection box without right-of-way, so simultaneous arrivals don't
-  // T-bone each other.
   const apx = approachingIntersection(v, world);
-  if (apx && anyCrossingTraffic(v, apx, state)) {
-    throttle = Math.min(throttle, 0.05);
-    brake = Math.max(brake, 0.7);
-  }
-  // ---- TRAFFIC SIGNAL ----
-  // If a signal-controlled intersection is in front of us and our direction
-  // has a red light, stop at the stop line (about 35 px back from the
-  // intersection center). Yellow phase (last 1.5 s of the green window)
-  // also makes us slow down and prepare to stop.
   if (apx) {
+    const isYielding = anyCrossingTraffic(v, apx, state);
+    if (isYielding) {
+      v.yieldingTimer += dt;
+    } else {
+      v.yieldingTimer = Math.max(0, v.yieldingTimer - dt);
+    }
+
+    // DEADLOCK RESOLUTION: If yielding for too long (> 3.2s), force through.
+    const shouldYield = isYielding && v.yieldingTimer < 3.2;
+
+    if (shouldYield) {
+      throttle = Math.min(throttle, 0.05);
+      brake = Math.max(brake, 0.7);
+    }
+
     const dToIntersection = dist(v.x, v.y, apx.x, apx.y);
     const lightState = signalForVehicle(v, state); // "green" | "yellow" | "red"
-    if (lightState === "red" && dToIntersection > 28 && dToIntersection < 90) {
+    // Stop line moved back to 55px from center to stay clear of zebra crossings.
+    if (lightState === "red" && dToIntersection > 55 && dToIntersection < 100) {
       throttle = 0;
       brake = Math.max(brake, 0.85);
-    } else if (lightState === "yellow" && dToIntersection > 28 && dToIntersection < 70) {
+    } else if (lightState === "yellow" && dToIntersection > 55 && dToIntersection < 75) {
       throttle = Math.min(throttle, 0.1);
       brake = Math.max(brake, 0.55);
     }
+  } else {
+    v.yieldingTimer = 0;
   }
 
   // If pointing far off target (sharp turn), slow down
@@ -1316,32 +1410,71 @@ export function fireBullet(
   if (shooter.weapon === "fist") return;
   if (shooter.ammo <= 0 && !shooter.isPlayer) return;
   if (shooter.ammo > 0) shooter.ammo -= 1;
-  const sp = 600;
+
+  let sp = 600;
+  let life = 0.6;
+  let bDamage = damage;
+  let color = "#fff080";
+  let size = 1.2;
+
+  if (shooter.weapon === "sniper") {
+    sp = 1200;
+    life = 0.8;
+    bDamage = damage * 2.5;
+  } else if (shooter.weapon === "rpg") {
+    sp = 250;
+    life = 2.5;
+    bDamage = damage * 5;
+    size = 4;
+    color = "#ffaa40";
+  } else if (shooter.weapon === "flamethrower") {
+    sp = 150 + rand(-20, 20);
+    life = 0.25;
+    bDamage = damage * 0.4;
+    color = "#ff6020";
+    size = 3;
+  }
+
   const sx = shooter.x + Math.cos(angle) * 6;
   const sy = shooter.y + Math.sin(angle) * 6;
+  
   state.bullets.push({
     x: sx,
     y: sy,
     vx: Math.cos(angle) * sp,
     vy: Math.sin(angle) * sp,
-    life: 0.6,
-    damage,
+    life,
+    damage: bDamage,
     owner: shooter.id,
-  });
-  for (let i = 0; i < 4; i++) {
-    state.particles.push({
-      x: sx,
-      y: sy,
-      vx: Math.cos(angle + rand(-0.3, 0.3)) * rand(40, 90),
-      vy: Math.sin(angle + rand(-0.3, 0.3)) * rand(40, 90),
-      life: 0.08,
-      maxLife: 0.08,
-      size: 1.5,
-      kind: "muzzle",
-      color: "#fff080",
-      rotation: 0,
-      rotationSpeed: 0,
-    });
+    kind: shooter.weapon === "rpg" ? "rocket" : shooter.weapon === "flamethrower" ? "fire" : "bullet",
+  } as any);
+
+  // Muzzle flash / fire particles
+  if (shooter.weapon === "flamethrower") {
+    for (let i = 0; i < 3; i++) {
+      state.particles.push({
+        x: sx, y: sy,
+        vx: Math.cos(angle + rand(-0.4, 0.4)) * rand(100, 200),
+        vy: Math.sin(angle + rand(-0.4, 0.4)) * rand(100, 200),
+        life: 0.3, maxLife: 0.3, size: 5, kind: "fire", color: "#ff8030", rotation: 0, rotationSpeed: 0
+      });
+    }
+  } else {
+    for (let i = 0; i < 4; i++) {
+      state.particles.push({
+        x: sx,
+        y: sy,
+        vx: Math.cos(angle + rand(-0.3, 0.3)) * rand(40, 90),
+        vy: Math.sin(angle + rand(-0.3, 0.3)) * rand(40, 90),
+        life: 0.08,
+        maxLife: 0.08,
+        size: 1.5,
+        kind: "muzzle",
+        color,
+        rotation: 0,
+        rotationSpeed: 0,
+      });
+    }
   }
 }
 
@@ -1373,3 +1506,4 @@ export function bustPlayer(state: GameState) {
   if (state.endScreen) return;
   state.player.busted = true;
 }
+

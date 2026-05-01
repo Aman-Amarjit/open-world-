@@ -14,7 +14,7 @@ export type WeatherKind = "clear" | "rain" | "storm" | "fog" | "snow" | "wind";
 
 export type TimeOfDay = "day" | "dusk" | "night";
 
-export type WeaponKind = "fist" | "pistol" | "smg" | "shotgun";
+export type WeaponKind = "fist" | "pistol" | "smg" | "shotgun" | "rifle" | "sniper" | "rpg" | "flamethrower";
 
 export interface Vehicle {
   id: number;
@@ -64,6 +64,14 @@ export interface Vehicle {
   stuckTimer: number;
   // Positive = currently in a reverse-out recovery; counts down to zero.
   reverseTimer: number;
+  // Time spent waiting for crossing traffic — used to break deadlocks.
+  yieldingTimer: number;
+  // Time spent being blocked by other cars/objects while wanting to move.
+  blockedTimer: number;
+  // behavior
+  drivingStyle: "aggressive" | "cautious" | "normal";
+  // visual variation (0..1) for rust, spoilers, etc.
+  visualVariant: number;
 }
 
 export interface Human {
@@ -80,22 +88,22 @@ export interface Human {
   inVehicle: Vehicle | null;
   // ai
   aiState:
-    | "idle"
-    | "wander"
-    | "flee"
-    | "chase"
-    | "attack"
-    | "patrol"
-    | "fleeOnFoot"
-    | "panic"
-    | "downed"
-    | "witness"
-    | "cover"
-    | "investigate"
-    | "retreat"
-    | "roadblock"
-    | "surrender"
-    | "fight";
+  | "idle"
+  | "wander"
+  | "flee"
+  | "chase"
+  | "attack"
+  | "patrol"
+  | "fleeOnFoot"
+  | "panic"
+  | "downed"
+  | "witness"
+  | "cover"
+  | "investigate"
+  | "retreat"
+  | "roadblock"
+  | "surrender"
+  | "fight";
   aiTimer: number;
   aiTargetX: number;
   aiTargetY: number;
@@ -135,13 +143,20 @@ export interface Human {
   // sprinting again). Decreases while sprinting, regenerates while walking.
   stamina: number;
   staminaLocked: boolean;
+  // New AI / Social properties
+  groupId?: number;
+  behavior: "normal" | "jogger" | "slow";
+  chatTimer: number;
+  bravery: number; // 0..1
+  witnessCrimePos?: { x: number; y: number };
 }
 
-export type AnimalKind = "dog" | "cat" | "pigeon";
+export type AnimalKind = "dog" | "cat" | "pigeon" | "deer" | "bear" | "wolf" | "cow" | "boar";
 
 export interface Animal {
   id: number;
   kind: AnimalKind;
+  breed: number; // visual variation
   x: number;
   y: number;
   vx: number;
@@ -149,7 +164,7 @@ export interface Animal {
   angle: number;
   speed: number;
   hp: number;
-  state: "wander" | "flee" | "downed";
+  state: "wander" | "flee" | "downed" | "sit" | "sniff" | "chase" | "bark" | "attack";
   stateTimer: number;
   walkPhase: number;
   furColor: string;
@@ -158,6 +173,7 @@ export interface Animal {
   flyTimer: number;
   panicFromX: number;
   panicFromY: number;
+  targetId?: number; // for chasing other animals
   // home / wander anchor
   homeX: number;
   homeY: number;
@@ -296,6 +312,7 @@ export interface Input {
   mouseDown: boolean;
   // Set each tick by updateShops when player is standing at a shop door.
   nearbyShopId: number | null;
+  weaponWheelOpen: boolean;
 }
 
 export interface GameState {
@@ -372,4 +389,7 @@ export interface GameState {
   trafficPhase: 0 | 1;
   // Time spent in current phase (resets on toggle).
   trafficPhaseTimer: number;
+  // Police search logic
+  lastKnownPlayerPos: { x: number; y: number } | null;
+  policeSearchTimer: number;
 }

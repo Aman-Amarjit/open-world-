@@ -1,9 +1,9 @@
 // Rendering: world tiles, buildings, weather, lighting overlays
-import type { GameState, Particle, Animal, Prop, BirdFlock } from "./types";
+import type { GameState, Particle, Animal, Prop, BirdFlock, Human, Vehicle } from "./types";
 import type { WorldData, Building } from "./world";
 import { TILE } from "./world";
-import { shadeHex } from "./utils";
-import { drawCar, drawCarShadow, drawHuman, drawHumanShadow } from "./sprites";
+import { shadeHex, rand } from "./utils";
+import { drawCar, drawHuman } from "./sprites";
 
 export interface RenderContext {
   ctx: CanvasRenderingContext2D;
@@ -57,388 +57,359 @@ export function renderWorld(rc: RenderContext) {
       const h2 = ((seed ^ 0xa5a5a5a5) * 1597334677) >>> 0;
       const h3 = ((seed + 0x9e3779b9) * 0x85ebca6b) >>> 0;
       switch (t.type) {
+        // ─── GRASS ──────────────────────────────────────────────────────────────
         case "grass": {
-          // ── Clean GTA-style lawn: solid green base with fine speckle for
-          //    texture. No fake-grunge blobs that look ugly at zoom. ──
-          const lush = t.variant! >= 4;
-          const base = timeFilter(state.timeOfDay, lush ? "#5a8a3a" : "#4a7a3f");
+          const base = timeFilter(state.timeOfDay, "#4a6e2a");
           ctx.fillStyle = base;
           ctx.fillRect(px, py, TILE, TILE);
-          // Slightly darker speckle for grass-blade texture
-          ctx.fillStyle = shadeHex(base, -8);
-          for (let i = 0; i < 8; i++) {
-            const sx = px + ((h1 >> (i * 2)) % TILE);
-            const sy = py + ((h2 >> (i * 3)) % TILE);
+
+          // Two-tone speckle: slightly darker and slightly lighter green dots
+          // Use per-tile hash for stable, flicker-free noise
+          const dark = shadeHex(base, -18);
+          const lite = shadeHex(base, 14);
+          for (let i = 0; i < 22; i++) {
+            const hh = ((h1 >> (i % 7)) ^ (h2 * (i + 1))) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 5) % TILE);
+            ctx.fillStyle = i % 3 === 0 ? lite : dark;
             ctx.fillRect(sx, sy, 1, 1);
           }
-          // Lighter speckle (highlight)
-          ctx.fillStyle = shadeHex(base, 10);
-          for (let i = 0; i < 5; i++) {
-            const sx = px + ((h2 >> (i * 2)) % TILE);
-            const sy = py + ((h3 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          break;
-        }
-        case "sidewalk": {
-          // ── GTA-style 4-up concrete slabs: tan base, per-slab tone shifts,
-          //    crisp dark grout joints. NO weathering blobs or oil stains. ──
-          const baseSw = timeFilter(state.timeOfDay, "#beb09a");
-          // Per-slab tone variation (subtle, ±4)
-          for (let qy = 0; qy < 2; qy++) {
-            for (let qx = 0; qx < 2; qx++) {
-              const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
-              const tone = ((qHash % 9) - 4); // -4..+4
-              ctx.fillStyle = shadeHex(baseSw, tone);
-              ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
+
+          // Lush variant gets a few extra dark patches
+          if (t.variant! >= 4) {
+            for (let i = 0; i < 6; i++) {
+              const hh = ((h3 * (i + 3)) ^ h1) >>> 0;
+              const sx = px + (hh % (TILE - 3));
+              const sy = py + ((hh >> 4) % (TILE - 3));
+              ctx.fillStyle = shadeHex(base, -28);
+              ctx.fillRect(sx, sy, 2, 2);
             }
           }
-          // Crisp dark grout joints between slabs (the "GTA tile lines")
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#6e6354");
-          ctx.fillRect(px, py + TILE / 2 - 0.5, TILE, 1);
-          ctx.fillRect(px + TILE / 2 - 0.5, py, 1, TILE);
-          // Tiny aggregate speckle for concrete texture (subtle, no blobs)
-          ctx.fillStyle = shadeHex(baseSw, -12);
-          for (let i = 0; i < 5; i++) {
-            const sx = px + ((h1 >> (i * 2)) % TILE);
-            const sy = py + ((h2 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          ctx.fillStyle = shadeHex(baseSw, 8);
-          for (let i = 0; i < 4; i++) {
-            const sx = px + ((h2 >> (i * 2)) % TILE);
-            const sy = py + ((h3 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          // Per-tile street furniture (deterministic by hash so it's stable).
-          const swFurniture = h3 & 0x3f;
-          if (swFurniture === 0) {
-            // Manhole cover (cast iron disk with cross pattern)
-            const mcx = px + TILE / 2;
-            const mcy = py + TILE / 2;
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#3a342c");
-            ctx.beginPath();
-            ctx.arc(mcx, mcy, 6, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#1a1714");
-            ctx.lineWidth = 0.6;
-            ctx.beginPath();
-            ctx.arc(mcx, mcy, 6, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#2a241c");
-            ctx.fillRect(mcx - 4, mcy - 0.4, 8, 0.8);
-            ctx.fillRect(mcx - 0.4, mcy - 4, 0.8, 8);
-          } else if (swFurniture === 1) {
-            // Fire hydrant (small red post near the curb edge)
-            const hx = px + 4 + (h1 % 4);
-            const hy = py + 4 + (h2 % 4);
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#b53028");
-            ctx.fillRect(hx - 1.5, hy - 2, 3, 5);
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#e84838");
-            ctx.fillRect(hx - 1.2, hy - 1.7, 0.6, 4.5);
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#3a1a14");
-            ctx.fillRect(hx - 2, hy + 3, 4, 0.6);
-          } else if (swFurniture === 2) {
-            // Accent slab — a darker stone block (decorative)
-            ctx.fillStyle = shadeHex(baseSw, -22);
-            ctx.fillRect(px + TILE / 2 - 6, py + TILE / 2 - 6, 12, 12);
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#5e5446");
-            ctx.lineWidth = 0.7;
-            ctx.strokeRect(px + TILE / 2 - 6, py + TILE / 2 - 6, 12, 12);
-          } else if (swFurniture === 3) {
-            // Trash bin (small dark rectangle with rim)
-            const tbx = px + TILE - 8;
-            const tby = py + TILE - 10;
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#2a2a2a");
-            ctx.fillRect(tbx, tby, 6, 8);
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#4a4a4a");
-            ctx.fillRect(tbx, tby, 6, 1.2);
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#1a1a1a");
-            ctx.fillRect(tbx + 2, tby + 2, 2, 1);
-          }
           break;
         }
-        case "road":
-        case "intersection": {
-          // ── GTA-style asphalt: clean medium gray with slight blue tint,
-          //    minimal grain, NO blob-stains or patches. White lane lines. ──
-          const asphalt = timeFilter(state.timeOfDay, "#4a4d52");
+
+        // ─── SIDEWALK ───────────────────────────────────────────────────────────
+        case "sidewalk": {
+          // Warm concrete base (beige-gray matching GTA2 reference)
+          const swBase = timeFilter(state.timeOfDay, "#b4ab98");
+          ctx.fillStyle = swBase;
+          ctx.fillRect(px, py, TILE, TILE);
+
+          // Concrete slab grid — 16px slabs (2×2 per TILE if TILE=32, or 4×4 if TILE=64)
+          const slabSize = Math.max(16, TILE / 4);
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#8a8278");
+          ctx.lineWidth = 0.6;
+          for (let i = 1; i < Math.ceil(TILE / slabSize); i++) {
+            const o = i * slabSize;
+            ctx.beginPath();
+            ctx.moveTo(px + o, py);
+            ctx.lineTo(px + o, py + TILE);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + o);
+            ctx.lineTo(px + TILE, py + o);
+            ctx.stroke();
+          }
+
+          // Fine grit dots
+          for (let i = 0; i < 14; i++) {
+            const hh = ((h2 >> (i % 6)) ^ h3) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 4) % TILE);
+            ctx.fillStyle = i % 4 === 0
+              ? "rgba(255,255,255,0.18)"
+              : "rgba(0,0,0,0.12)";
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+
+          // Occasional crack (every ~12th tile)
+          if ((h1 % 12) === 0) {
+            ctx.strokeStyle = "rgba(0,0,0,0.18)";
+            ctx.lineWidth = 0.5;
+            ctx.beginPath();
+            ctx.moveTo(px + (h2 % TILE), py + (h1 % TILE));
+            ctx.lineTo(px + (h3 % TILE), py + (h2 % TILE));
+            ctx.stroke();
+          }
+
+          // Thin curb shadow at the road-facing edge — drawn by road tiles below,
+          // but we add a subtle darkened edge on the sidewalk's inward border:
+          ctx.fillStyle = "rgba(0,0,0,0.08)";
+          ctx.fillRect(px, py, TILE, 1);        // top edge
+          ctx.fillRect(px, py, 1, TILE);        // left edge
+          break;
+        }
+
+        // ─── ROAD ───────────────────────────────────────────────────────────────
+        case "road": {
+          // Dark olive-gray asphalt — the GTA2 reference reads as near-black with
+          // a very slight warm green tint, not the blue-gray we had before.
+          const asphalt = timeFilter(state.timeOfDay, "#30332a");
           ctx.fillStyle = asphalt;
           ctx.fillRect(px, py, TILE, TILE);
-          // Light aggregate speckle (subtle, evenly distributed)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#5c5f63");
-          for (let i = 0; i < 6; i++) {
-            const sx = px + ((h1 >> (i * 2)) % TILE);
-            const sy = py + ((h2 >> (i * 3)) % TILE);
+
+          // Dense micro-grain: tiny alternating dark/light pixels
+          for (let i = 0; i < 24; i++) {
+            const hh = ((h1 * (i + 7)) ^ h2) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 4) % TILE);
+            ctx.fillStyle = i % 2 === 0 ? "#24271f" : "#3e4136";
             ctx.fillRect(sx, sy, 1, 1);
           }
-          // Darker speckle (variation)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#3a3d42");
-          for (let i = 0; i < 5; i++) {
-            const sx = px + ((h2 >> (i * 2)) % TILE);
-            const sy = py + ((h3 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          // Occasional manhole cover (cast iron disk) — adds road furniture
-          if (((x * 13 + y * 23) % 47) === 0 && t.type === "road") {
-            const mcx = px + TILE / 2;
-            const mcy = py + TILE / 2;
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#26221d");
-            ctx.beginPath();
-            ctx.arc(mcx, mcy, 7, 0, Math.PI * 2);
-            ctx.fill();
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "#0e0c0a");
-            ctx.lineWidth = 0.8;
-            ctx.beginPath();
-            ctx.arc(mcx, mcy, 7, 0, Math.PI * 2);
-            ctx.stroke();
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#1a1614");
-            ctx.fillRect(mcx - 5, mcy - 0.5, 10, 1);
-            ctx.fillRect(mcx - 0.5, mcy - 5, 1, 10);
-          }
-          // Stop line — solid white bar painted just before a crosswalk
-          // approach. We check if the next tile in our travel direction is a
-          // crosswalk; if so, draw the bar at the far edge of this tile.
-          if (t.type === "road") {
-            const stopColor =
-              state.timeOfDay === "night"
-                ? "#e8e8e0"
-                : state.timeOfDay === "dusk"
-                  ? "#ece9dc"
-                  : "#f0eee4";
+
+          // Tar seam lines (subtle horizontal or vertical dark bands)
+          if ((h2 % 8) === 0) {
+            ctx.fillStyle = "rgba(0,0,0,0.18)";
             if (t.roadDir === "h") {
-              const eastTile = world.tiles[y]?.[x + 1];
-              const westTile = world.tiles[y]?.[x - 1];
-              if (eastTile?.type === "crosswalk") {
-                ctx.fillStyle = stopColor;
-                ctx.fillRect(px + TILE - 4, py + TILE / 2 + 1, 2.5, TILE / 2 - 4);
-              } else if (westTile?.type === "crosswalk") {
-                ctx.fillStyle = stopColor;
-                ctx.fillRect(px + 1.5, py + 4, 2.5, TILE / 2 - 4);
-              }
-            } else if (t.roadDir === "v") {
-              const southTile = world.tiles[y + 1]?.[x];
-              const northTile = world.tiles[y - 1]?.[x];
-              if (southTile?.type === "crosswalk") {
-                ctx.fillStyle = stopColor;
-                ctx.fillRect(px + 4, py + TILE - 4, TILE / 2 - 4, 2.5);
-              } else if (northTile?.type === "crosswalk") {
-                ctx.fillStyle = stopColor;
-                ctx.fillRect(px + TILE / 2 + 1, py + 1.5, TILE / 2 - 4, 2.5);
-              }
-            }
-          }
-          // Tire skid (very rare — no oil stains, patches, cracks)
-          if (((x * 17 + y * 11) % 89) === 0 && t.type === "road") {
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(20,20,20,0.55)");
-            ctx.lineWidth = 1.5;
-            ctx.beginPath();
-            if (t.roadDir === "h") {
-              ctx.moveTo(px + 6, py + TILE * 0.4);
-              ctx.lineTo(px + TILE - 6, py + TILE * 0.45);
-              ctx.moveTo(px + 6, py + TILE * 0.55);
-              ctx.lineTo(px + TILE - 6, py + TILE * 0.6);
+              ctx.fillRect(px, py + (h1 % (TILE - 4)), TILE, 1);
             } else {
-              ctx.moveTo(px + TILE * 0.4, py + 6);
-              ctx.lineTo(px + TILE * 0.45, py + TILE - 6);
-              ctx.moveTo(px + TILE * 0.55, py + 6);
-              ctx.lineTo(px + TILE * 0.6, py + TILE - 6);
+              ctx.fillRect(px + (h1 % (TILE - 4)), py, 1, TILE);
             }
+          }
+
+          // Oil/rubber stain blobs
+          if ((h3 % 9) === 0) {
+            ctx.fillStyle = "rgba(0,0,0,0.14)";
+            const ox = px + (h1 % (TILE - 6)) + 3;
+            const oy = py + (h2 % (TILE - 6)) + 3;
+            ctx.beginPath();
+            ctx.ellipse(ox, oy, 4 + (h3 % 4), 2 + (h3 % 2), (h1 % 6) * 0.5, 0, Math.PI * 2);
+            ctx.fill();
+          }
+
+          // ── Lane markings ──
+          // GTA2 style: crisp white dashed lines ONLY — no yellow center line.
+          // Lines are quarter-tile inset from edges (so 2 lanes per road tile).
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#e8e8d8");
+          ctx.lineWidth = 1.5;
+          ctx.setLineDash([10, 10]);
+
+          if (t.roadDir === "h") {
+            // Two dashed lines at 1/4 and 3/4 height
+            ctx.beginPath();
+            ctx.moveTo(px, py + TILE * 0.25);
+            ctx.lineTo(px + TILE, py + TILE * 0.25);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + TILE * 0.75);
+            ctx.lineTo(px + TILE, py + TILE * 0.75);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(px + TILE * 0.25, py);
+            ctx.lineTo(px + TILE * 0.25, py + TILE);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px + TILE * 0.75, py);
+            ctx.lineTo(px + TILE * 0.75, py + TILE);
             ctx.stroke();
           }
-          // Lane markings — pure white dashes. Skip the time-of-day filter
-          // because real road paint is reflective and reads as bright white
-          // at night under headlights; without this they go beige and look
-          // like old yellow paint.
-          const laneColor =
-            state.timeOfDay === "night"
-              ? "#e8e8e0"
-              : state.timeOfDay === "dusk"
-                ? "#ece9dc"
-                : "#f0eee4";
-          if (t.type === "road" && t.roadDir === "h") {
-            ctx.strokeStyle = laneColor;
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([12, 8]);
-            const rowInBlock = y % 10;
-            if (rowInBlock === 5 || rowInBlock === 1) {
-              ctx.beginPath();
-              ctx.moveTo(px, py + TILE / 2);
-              ctx.lineTo(px + TILE, py + TILE / 2);
-              ctx.stroke();
-            }
-            ctx.setLineDash([]);
-          } else if (t.type === "road" && t.roadDir === "v") {
-            ctx.strokeStyle = laneColor;
-            ctx.lineWidth = 1.5;
-            ctx.setLineDash([12, 8]);
-            const colInBlock = x % 10;
-            if (colInBlock === 5 || colInBlock === 1) {
-              ctx.beginPath();
-              ctx.moveTo(px + TILE / 2, py);
-              ctx.lineTo(px + TILE / 2, py + TILE);
-              ctx.stroke();
-            }
-            ctx.setLineDash([]);
+          ctx.setLineDash([]);
+
+          // Solid white edge lines (road shoulders)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#c8c8b8");
+          ctx.lineWidth = 1;
+          if (t.roadDir === "h") {
+            ctx.beginPath();
+            ctx.moveTo(px, py + 2);
+            ctx.lineTo(px + TILE, py + 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + TILE - 2);
+            ctx.lineTo(px + TILE, py + TILE - 2);
+            ctx.stroke();
+          } else {
+            ctx.beginPath();
+            ctx.moveTo(px + 2, py);
+            ctx.lineTo(px + 2, py + TILE);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px + TILE - 2, py);
+            ctx.lineTo(px + TILE - 2, py + TILE);
+            ctx.stroke();
           }
           break;
         }
-        case "crosswalk": {
-          // ── Clean white zebra stripes on asphalt base. No mottle, no
-          //    fake wear shading — looks crisp at all zoom levels. ──
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#4a4d52");
+
+        // ─── INTERSECTION ────────────────────────────────────────────────────────
+        case "intersection": {
+          // Same dark asphalt base
+          const iAsphalt = timeFilter(state.timeOfDay, "#2c2f26");
+          ctx.fillStyle = iAsphalt;
           ctx.fillRect(px, py, TILE, TILE);
-          // Stripes use the un-darkened paint color (reflective at night)
-          ctx.fillStyle =
-            state.timeOfDay === "night"
-              ? "#e8e8e0"
-              : state.timeOfDay === "dusk"
-                ? "#ece9dc"
-                : "#f0eee4";
+
+          // Grain
+          for (let i = 0; i < 18; i++) {
+            const hh = ((h1 * (i + 3)) ^ h3) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 4) % TILE);
+            ctx.fillStyle = i % 2 === 0 ? "#202318" : "#383c30";
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+
+          // White stop-line boxes at each approach edge (GTA2 style: solid white bars)
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#d0d0c0");
+          const barW = 3;
+          // North approach bar
+          ctx.fillRect(px + TILE * 0.1, py, TILE * 0.8, barW);
+          // South approach bar
+          ctx.fillRect(px + TILE * 0.1, py + TILE - barW, TILE * 0.8, barW);
+          // West approach bar
+          ctx.fillRect(px, py + TILE * 0.1, barW, TILE * 0.8);
+          // East approach bar
+          ctx.fillRect(px + TILE - barW, py + TILE * 0.1, barW, TILE * 0.8);
+
+          // Diagonal corner triangles (faint white — GTA2 characteristic detail)
+          ctx.fillStyle = "rgba(200,200,185,0.12)";
+          const tri = TILE * 0.18;
+          ctx.beginPath();
+          ctx.moveTo(px, py); ctx.lineTo(px + tri, py); ctx.lineTo(px, py + tri);
+          ctx.closePath(); ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(px + TILE, py); ctx.lineTo(px + TILE - tri, py); ctx.lineTo(px + TILE, py + tri);
+          ctx.closePath(); ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(px, py + TILE); ctx.lineTo(px + tri, py + TILE); ctx.lineTo(px, py + TILE - tri);
+          ctx.closePath(); ctx.fill();
+          ctx.beginPath();
+          ctx.moveTo(px + TILE, py + TILE); ctx.lineTo(px + TILE - tri, py + TILE); ctx.lineTo(px + TILE, py + TILE - tri);
+          ctx.closePath(); ctx.fill();
+
+          // Painted arrow — one per intersection tile based on hash (N/S/E/W)
+          const arrowDir = h2 % 4; // 0=N, 1=E, 2=S, 3=W
+          const cx2 = px + TILE / 2;
+          const cy2 = py + TILE / 2;
+          ctx.save();
+          ctx.translate(cx2, cy2);
+          ctx.rotate([Math.PI * 1.5, 0, Math.PI * 0.5, Math.PI][arrowDir]!);
+          ctx.fillStyle = "rgba(200,200,185,0.35)";
+          // Shaft
+          ctx.fillRect(-1.5, -7, 3, 12);
+          // Arrowhead
+          ctx.beginPath();
+          ctx.moveTo(0, -10); ctx.lineTo(-4, -5); ctx.lineTo(4, -5);
+          ctx.closePath(); ctx.fill();
+          ctx.restore();
+          break;
+        }
+
+        // ─── CROSSWALK ───────────────────────────────────────────────────────────
+        case "crosswalk": {
+          // Match road asphalt base
+          const cwBase = timeFilter(state.timeOfDay, "#30332a");
+          ctx.fillStyle = cwBase;
+          ctx.fillRect(px, py, TILE, TILE);
+
+          // Bright white zebra stripes — alternating 5px bars with 4px gaps
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#e0e0d0");
+          const stripeW = 5;
+          const gap = 4;
           if (t.roadDir === "v") {
-            // Horizontal stripes (cars going N/S)
-            for (let i = 0; i < 6; i++) {
-              ctx.fillRect(px + 4, py + 4 + i * 10, TILE - 8, 6);
+            for (let i = 0; i < 5; i++) {
+              ctx.fillRect(px + 4, py + 4 + i * (stripeW + gap), TILE - 8, stripeW);
             }
           } else {
-            // Vertical stripes (cars going E/W)
-            for (let i = 0; i < 6; i++) {
-              ctx.fillRect(px + 4 + i * 10, py + 4, 6, TILE - 8);
+            for (let i = 0; i < 5; i++) {
+              ctx.fillRect(px + 4 + i * (stripeW + gap), py + 4, stripeW, TILE - 8);
             }
           }
           break;
         }
+
+        // ─── BUILDING FOOTPRINT ─────────────────────────────────────────────────
         case "building": {
-          // skip - we draw buildings separately for proper extrusion
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#3a3a3a");
+          // Flat dark fill — the drawBuilding() call above replaces this
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#282822");
           ctx.fillRect(px, py, TILE, TILE);
           break;
         }
+
+        // ─── WATER ──────────────────────────────────────────────────────────────
         case "water": {
-          // ── Deeper-water look with two layers of waves and subtle caustics ──
-          const tt = performance.now() / 1000;
-          const base = timeFilter(state.timeOfDay, "#1f3d6a");
-          const deep = timeFilter(state.timeOfDay, "#163058");
-          // Vertical depth gradient (top slightly lighter from sky reflection)
-          const wg = ctx.createLinearGradient(px, py, px, py + TILE);
-          wg.addColorStop(0, shadeHex(base, 8));
-          wg.addColorStop(1, deep);
-          ctx.fillStyle = wg;
+          const tt2 = performance.now() / 1000;
+          const wBase = timeFilter(state.timeOfDay, "#0e2a42");
+          ctx.fillStyle = wBase;
           ctx.fillRect(px, py, TILE, TILE);
-          // Long lazy wave lines (back layer, lower opacity)
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(150,200,240,0.10)");
-          ctx.lineWidth = 1.4;
-          ctx.beginPath();
-          for (let i = 0; i < 2; i++) {
-            const offY = py + 16 + i * 28 + Math.sin(tt * 0.6 + (x + y) * 0.3 + i) * 2.5;
-            ctx.moveTo(px, offY);
-            ctx.bezierCurveTo(px + 16, offY - 3, px + 32, offY + 3, px + 48, offY - 1);
-            ctx.lineTo(px + TILE, offY);
-          }
-          ctx.stroke();
-          // Bright crisp ripples (front layer)
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(200,225,250,0.22)");
+
+          // Slow horizontal shimmer lines (wave effect)
+          ctx.strokeStyle = "rgba(80,160,220,0.18)";
           ctx.lineWidth = 1;
-          ctx.beginPath();
-          for (let i = 0; i < 3; i++) {
-            const offY = py + 12 + i * 18 + Math.sin(tt + (x + y) * 0.4 + i) * 2;
-            ctx.moveTo(px, offY);
-            ctx.bezierCurveTo(px + 16, offY - 2, px + 32, offY + 2, px + 48, offY - 1);
-            ctx.lineTo(px + TILE, offY);
-          }
-          ctx.stroke();
-          // Sparkles (sun glints — animated drift)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "rgba(220,240,255,0.45)");
-          for (let i = 0; i < 3; i++) {
-            const sx = px + ((x * 23 + i * 17 + Math.floor(tt * 8)) % TILE);
-            const sy = py + ((y * 19 + i * 11 + Math.floor(tt * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1.5, 1.5);
-          }
-          break;
-        }
-        case "sand": {
-          // ── Beach sand: gradient base + ripple lines + mixed pebbles + shells ──
-          const sandBase = timeFilter(state.timeOfDay, "#e8d49a");
-          // Subtle gradient (varied across map for non-flat look)
-          const sg = ctx.createLinearGradient(px, py, px + TILE, py + TILE);
-          sg.addColorStop(0, shadeHex(sandBase, 4));
-          sg.addColorStop(1, shadeHex(sandBase, -6));
-          ctx.fillStyle = sg;
-          ctx.fillRect(px, py, TILE, TILE);
-          // Ripple lines (gentle waves of darker sand)
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(170,140,90,0.25)");
-          ctx.lineWidth = 0.8;
-          ctx.beginPath();
-          for (let i = 0; i < 2; i++) {
-            const ry = py + 16 + i * 26 + ((h1 >> (i * 3)) & 0x7);
-            ctx.moveTo(px, ry);
-            ctx.quadraticCurveTo(px + TILE / 2, ry + 3, px + TILE, ry);
-          }
-          ctx.stroke();
-          // Granular dots (many small)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#c8a868");
-          for (let i = 0; i < 7; i++) {
-            const sx = px + ((h1 >> (i * 2)) % TILE);
-            const sy = py + ((h2 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          // Lighter highlights
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#f0e0b0");
           for (let i = 0; i < 4; i++) {
-            const sx = px + ((h2 >> (i * 2)) % TILE);
-            const sy = py + ((h3 >> (i * 3)) % TILE);
-            ctx.fillRect(sx, sy, 1, 1);
-          }
-          // Occasional shell or pebble
-          if ((h3 & 0x1f) === 0) {
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#fff5e0");
+            const oy = py + 6 + i * 14 + Math.sin(tt2 * 0.7 + (x + y) * 0.4 + i) * 2.5;
+            const phase = (tt2 * 0.6 + i * 0.8) % 1;
+            ctx.globalAlpha = 0.4 + Math.sin(tt2 + i * 1.3) * 0.2;
             ctx.beginPath();
-            ctx.ellipse(
-              px + (h1 % (TILE - 6)) + 3,
-              py + (h2 % (TILE - 6)) + 3,
-              2.5,
-              1.5,
-              (h3 % 4) * 0.5,
-              0,
-              Math.PI * 2,
-            );
-            ctx.fill();
-            ctx.strokeStyle = timeFilter(state.timeOfDay, "rgba(140,110,80,0.6)");
-            ctx.lineWidth = 0.4;
+            ctx.moveTo(px, oy);
+            ctx.lineTo(px + TILE, oy);
             ctx.stroke();
           }
+          ctx.globalAlpha = 1;
+
+          // Specular glint (single bright point, moves slowly)
+          const gx = px + ((h1 ^ Math.floor(tt2 * 0.2)) % TILE);
+          const gy = py + 4 + ((h2 ^ Math.floor(tt2 * 0.15)) % (TILE - 8));
+          ctx.fillStyle = "rgba(180,230,255,0.18)";
+          ctx.fillRect(gx, gy, 2, 1);
           break;
         }
+
+        // ─── SAND / BEACH ────────────────────────────────────────────────────────
+        case "sand": {
+          const sBase = timeFilter(state.timeOfDay, "#c8ae78");
+          ctx.fillStyle = sBase;
+          ctx.fillRect(px, py, TILE, TILE);
+
+          // Dense fine grain
+          for (let i = 0; i < 18; i++) {
+            const hh = ((h1 >> (i % 6)) ^ (h3 * i)) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 4) % TILE);
+            ctx.fillStyle = i % 3 === 0
+              ? "rgba(0,0,0,0.10)"
+              : "rgba(255,255,255,0.14)";
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+          break;
+        }
+
+        // ─── PLAZA / PAVEMENT ───────────────────────────────────────────────────
         case "plaza": {
-          // ── GTA-style cut-stone plaza: 4 tone-varied quadrants with crisp
-          //    dark grout joints. No transparent overlays, no fake highlights. ──
-          const baseSt = timeFilter(state.timeOfDay, "#c8bfac");
+          // Cool stone — alternating 2-tone tiles for a checker-light effect
+          const pBase = timeFilter(state.timeOfDay, "#9c9890");
+          const pAlt = shadeHex(pBase, -12);
+          const half = TILE / 2;
+          // 4 quadrants, checkerboard-light (not full chess contrast, just subtle)
           for (let qy = 0; qy < 2; qy++) {
             for (let qx = 0; qx < 2; qx++) {
-              const qHash = (h1 >> (qx * 4 + qy * 8)) & 0xff;
-              const tone = ((qHash % 11) - 5); // -5..+5
-              ctx.fillStyle = shadeHex(baseSt, tone);
-              ctx.fillRect(px + qx * (TILE / 2), py + qy * (TILE / 2), TILE / 2, TILE / 2);
-              // Faint per-slab grain
-              ctx.fillStyle = shadeHex(baseSt, tone - 14);
-              for (let i = 0; i < 3; i++) {
-                const ssx = px + qx * (TILE / 2) + ((qHash >> i) % (TILE / 2));
-                const ssy = py + qy * (TILE / 2) + ((qHash >> (i + 2)) % (TILE / 2));
-                ctx.fillRect(ssx, ssy, 1, 1);
-              }
+              ctx.fillStyle = (qx + qy) % 2 === 0 ? pBase : pAlt;
+              ctx.fillRect(px + qx * half, py + qy * half, half, half);
             }
           }
-          // Crisp grout joints (dark line at slab boundaries)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#6e6555");
-          ctx.fillRect(px, py + TILE / 2 - 0.5, TILE, 1);
-          ctx.fillRect(px + TILE / 2 - 0.5, py, 1, TILE);
-          // Outer slab edge (one solid tile boundary)
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#988e7a");
-          ctx.lineWidth = 0.8;
-          ctx.strokeRect(px + 0.4, py + 0.4, TILE - 0.8, TILE - 0.8);
+
+          // Thin grout lines
+          ctx.strokeStyle = shadeHex(pBase, -30);
+          ctx.lineWidth = 0.5;
+          ctx.beginPath();
+          ctx.moveTo(px + half, py); ctx.lineTo(px + half, py + TILE);
+          ctx.moveTo(px, py + half); ctx.lineTo(px + TILE, py + half);
+          ctx.stroke();
+
+          // Outer edge
+          ctx.strokeStyle = shadeHex(pBase, -22);
+          ctx.strokeRect(px + 0.5, py + 0.5, TILE - 1, TILE - 1);
+
+          // Subtle grit
+          for (let i = 0; i < 8; i++) {
+            const hh = ((h2 * (i + 2)) ^ h3) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 5) % TILE);
+            ctx.fillStyle = "rgba(0,0,0,0.07)";
+            ctx.fillRect(sx, sy, 1, 1);
+          }
           break;
         }
-      }
+      } // end switch
+
       // BRIDGE RAILINGS — draw stone curbs on tiles flagged isBridge
       // along the long axis of the bridge (sides perpendicular to traffic).
       if (t.isBridge) {
@@ -579,100 +550,93 @@ export function renderWorld(rc: RenderContext) {
     ctx.restore();
   }
 
-  // Buildings - extruded with fake-3d offset top
-  // Sort buildings so closer-to-bottom-of-screen draws later
-  const visibleBuildings = world.buildings.filter((b) => {
-    const bx = b.x * TILE;
-    const by = b.y * TILE;
-    return (
-      bx + b.w * TILE >= cam.x - rc.viewW / 2 / cam.zoom &&
-      by + b.h * TILE >= cam.y - rc.viewH / 2 / cam.zoom &&
-      bx <= cam.x + rc.viewW / 2 / cam.zoom &&
-      by <= cam.y + rc.viewH / 2 / cam.zoom
-    );
-  });
-  // Building shadows first (long, NW lighting)
-  for (const b of visibleBuildings) {
-    drawBuildingShadow(ctx, b, state);
-  }
-  // Building bodies, sorted by y (front buildings cover back ones)
-  visibleBuildings.sort((a, b) => a.y - b.y);
-  for (const b of visibleBuildings) {
-    drawBuilding(ctx, b, state);
-  }
-  // Shop doors + signs (drawn after buildings so they sit on top)
-  for (const b of visibleBuildings) {
-    if (b.shopId === undefined) continue;
-    const shop = world.shops.find((s) => s.id === b.shopId);
-    if (shop) drawShopFront(ctx, shop, b, state);
-  }
-
-  // Order entities by y for pseudo-depth
-  type Drawable =
-    | { y: number; draw: () => void }
-    | { y: number; draw: () => void };
+  // 1. COLLECT ALL DRAWABLES FOR DEPTH SORTING
+  // This is critical for top-down games with height: objects with higher Y (closer to bottom) 
+  // must draw later. We now include buildings in this list to prevent cars/humans 
+  // from "driving through" or "walking on top of" building walls.
+  interface Drawable { y: number; draw: () => void; shadow?: () => void; }
   const drawables: Drawable[] = [];
-  const isNightOrDusk =
-    state.timeOfDay === "night" || state.timeOfDay === "dusk";
+  const isNightOrDusk = state.timeOfDay === "night" || state.timeOfDay === "dusk";
+  const viewRect = {
+    minX: cam.x - rc.viewW / 2 / cam.zoom - 100,
+    maxX: cam.x + rc.viewW / 2 / cam.zoom + 100,
+    minY: cam.y - rc.viewH / 2 / cam.zoom - 100,
+    maxY: cam.y + rc.viewH / 2 / cam.zoom + 100
+  };
+
+  // Vehicles
   for (const v of state.vehicles) {
+    if (v.x < viewRect.minX || v.x > viewRect.maxX || v.y < viewRect.minY || v.y > viewRect.maxY) continue;
     drawables.push({
       y: v.y,
-      draw: () => drawCar(rc.ctx, v, isNightOrDusk),
+      shadow: () => drawCarShadow(ctx, v, 3, 4),
+      draw: () => drawCar(rc.ctx, v, isNightOrDusk)
     });
   }
+  // Humans
   for (const h of state.humans) {
     if (h.inVehicle) continue;
+    if (h.x < viewRect.minX || h.x > viewRect.maxX || h.y < viewRect.minY || h.y > viewRect.maxY) continue;
     drawables.push({
       y: h.y,
-      draw: () => drawHuman(rc.ctx, h),
+      shadow: () => drawHumanShadow(ctx, h, 1.5, 2),
+      draw: () => drawHuman(rc.ctx, h)
     });
   }
+  // Animals
   for (const a of state.animals) {
+    if (a.x < viewRect.minX || a.x > viewRect.maxX || a.y < viewRect.minY || a.y > viewRect.maxY) continue;
     drawables.push({
       y: a.y,
-      draw: () => drawAnimal(rc.ctx, a),
+      shadow: () => drawAnimalShadow(ctx, a),
+      draw: () => drawAnimal(rc.ctx, a)
     });
   }
+  // Props
   for (const p of state.props) {
-    // Cull off-screen props quickly
-    if (
-      p.x < cam.x - rc.viewW / 2 / cam.zoom - 60 ||
-      p.x > cam.x + rc.viewW / 2 / cam.zoom + 60 ||
-      p.y < cam.y - rc.viewH / 2 / cam.zoom - 60 ||
-      p.y > cam.y + rc.viewH / 2 / cam.zoom + 60
-    ) {
-      continue;
-    }
+    if (p.x < viewRect.minX || p.x > viewRect.maxX || p.y < viewRect.minY || p.y > viewRect.maxY) continue;
     drawables.push({
       y: p.y,
-      draw: () => drawProp(rc.ctx, p, state),
+      shadow: () => drawPropShadow(ctx, p),
+      draw: () => drawProp(rc.ctx, p, state)
+    });
+  }
+  // Buildings & Shops
+  for (const b of world.buildings) {
+    const bx = b.x * TILE;
+    const by = (b.y + b.h) * TILE; // Use base Y for sorting
+    const bw = b.w * TILE;
+    if (bx + bw < viewRect.minX || bx > viewRect.maxX || (b.y * TILE) - 150 > viewRect.maxY || by < viewRect.minY) continue;
+
+    drawables.push({
+      y: by, // Sort by bottom edge
+      shadow: () => drawBuildingShadow(ctx, b, state),
+      draw: () => {
+        drawBuilding(ctx, b, state);
+        if (b.shopId !== undefined) {
+          const shop = world.shops.find((s) => s.id === b.shopId);
+          if (shop) drawShopFront(ctx, shop, b, state);
+        }
+      }
     });
   }
 
-  // Draw shadows first
-  for (const v of state.vehicles) {
-    drawCarShadow(ctx, v, 3, 4);
-  }
-  for (const h of state.humans) {
-    if (h.inVehicle) continue;
-    drawHumanShadow(ctx, h, 1.5, 2);
-  }
-  for (const a of state.animals) {
-    drawAnimalShadow(ctx, a);
+  // 2. DRAW SHADOWS
+  for (const d of drawables) {
+    if (d.shadow) d.shadow();
   }
 
+  // 3. DRAW BODIES (Sorted by Y)
   drawables.sort((a, b) => a.y - b.y);
-  for (const d of drawables) d.draw();
-
-  // Bird flocks fly above everything; draw their shadows on the ground first
-  for (const f of state.birdFlocks) {
-    drawBirdFlockShadow(ctx, f);
-  }
-  for (const f of state.birdFlocks) {
-    drawBirdFlock(ctx, f);
+  for (const d of drawables) {
+    d.draw();
   }
 
-  // Bullets
+  // Bird flocks fly ABOVE everything (no depth sorting with buildings)
+  for (const f of state.birdFlocks) drawBirdFlockShadow(ctx, f);
+  for (const f of state.birdFlocks) drawBirdFlock(ctx, f);
+
+  // Bullets (Above bodies)
   for (const bul of state.bullets) {
     ctx.save();
     ctx.strokeStyle = "#ffd040";
@@ -686,24 +650,13 @@ export function renderWorld(rc: RenderContext) {
     ctx.restore();
   }
 
-  // Particles
+  // Particles & Weather
   drawParticles(ctx, state.particles);
+  if (state.weather === "rain" || state.weather === "storm") drawRain(ctx, state, rc);
 
-  // Weather rain - drawn in world space
-  if (state.weather === "rain" || state.weather === "storm") {
-    drawRain(ctx, state, rc);
-  }
-
-  // ----- TRAFFIC LIGHTS (world space) -----
-  // Small light heads on each corner of every visible intersection. Color
-  // reflects the city-wide trafficPhase: red/yellow/green per direction.
+  // Traffic Lights & Markers
+  // These are also world-space but sit above the ground layer
   drawTrafficLights(rc);
-
-  // ----- MISSION MARKERS (world space) -----
-  // Draw available mission pillars (pulsing column of light) and the active
-  // mission target marker — these need to be in WORLD space so they appear
-  // on the map, but we draw them BEFORE the night overlay so they punch
-  // through with the lighter blend afterwards.
   drawMissionMarkers(rc);
 
   ctx.restore();
@@ -806,370 +759,138 @@ function drawBuilding(
   const py = b.y * TILE;
   const w = b.w * TILE;
   const h = b.h * TILE;
-  const ext = b.height * 0.3; // extrusion height in px (toward NW)
+
+  // DYNAMIC 3D PERSPECTIVE: Extrude relative to screen center
+  const cam = state.camera;
+  const dx = (px + w / 2 - cam.x);
+  const dy = (py + h / 2 - cam.y);
+  const extFactor = 0.00018 * b.height;
+  const extX = dx * extFactor;
+  const extY = dy * extFactor;
 
   const wallColor = timeFilter(state.timeOfDay, b.color);
   const roofColor = timeFilter(state.timeOfDay, b.roofColor);
-  const dark = shadeHex(wallColor, -30);
-  const light = shadeHex(wallColor, 18);
+  const dark = shadeHex(wallColor, -45);
+  const vDark = shadeHex(wallColor, -65);
   const isNight = state.timeOfDay === "night";
 
-  // ---- WALL FACE TEXTURE (front face = south side at ground level) ----
-  // Draw the visible "front" panel (the south face) to give a brick / stucco feel.
-  // We fill the front strip below the roof with subtle horizontal bands.
-  // Building style varies by id parity: brick vs panel vs concrete.
-  const style = b.id % 3; // 0: brick, 1: concrete panel, 2: glass tower
+  // Roof corners
+  const rx = px + extX;
+  const ry = py + extY;
+  const rw = w;
+  const rh = h;
 
-  // Front face (sits on the ground rectangle). The "shape" of the building when
-  // looked at from above is the px..px+w, py..py+h rectangle. We tint that to
-  // emulate ground-floor wall texture. Use a subtle vertical gradient
-  // (top slightly brighter from sky bounce → bottom darker from ground shadow)
-  // so the wall doesn't look like a flat color.
-  const wallGrad = ctx.createLinearGradient(px, py, px, py + h);
-  wallGrad.addColorStop(0, shadeHex(wallColor, 6));
-  wallGrad.addColorStop(0.7, wallColor);
-  wallGrad.addColorStop(1, shadeHex(wallColor, -10));
-  ctx.fillStyle = wallGrad;
-  ctx.fillRect(px, py, w, h);
+  // 1. DRAW SIDE WALLS
+  const drawWall = (x1: number, y1: number, x2: number, y2: number, nx1: number, ny1: number, nx2: number, ny2: number, color: string, isVertical: boolean) => {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(nx2, ny2); ctx.lineTo(nx1, ny1);
+    ctx.closePath();
+    ctx.fill();
 
-  // Texture overlay
-  if (style === 0) {
-    // ===== BRICK ===== courses with mortar shading + per-row colour variation
-    const courseH = 8;
-    const brickW = 16;
-    for (let row = 0, y = py + 6; y < py + h; y += courseH, row++) {
-      // Slight per-course tint variation
-      const tint = (b.id * 7 + row * 17) % 11 - 5; // -5..+5
-      ctx.fillStyle = shadeHex(wallColor, -12 + tint);
-      ctx.fillRect(px, y, w, 1.2);
-      // Per-brick verticals offset by row (running bond pattern)
-      const off = row % 2 === 0 ? 0 : brickW / 2;
-      ctx.fillStyle = shadeHex(wallColor, -22);
-      for (let x = px + off; x < px + w; x += brickW) {
-        ctx.fillRect(x, y - courseH + 1, 1, courseH - 1);
+    // Architectural details (Columns and Floor Slabs)
+    const wallW = Math.abs(nx1 - x1);
+    const wallH = Math.abs(ny1 - y1);
+
+    ctx.strokeStyle = vDark;
+    ctx.lineWidth = 0.6;
+
+    if (isVertical) {
+      // Vertical wall (Left or Right)
+      // Floor slabs
+      const floors = Math.max(1, Math.floor(h / 16));
+      for (let i = 1; i < floors; i++) {
+        const fy1 = y1 + i * (h / floors);
+        const fny1 = ny1 + i * (h / floors);
+        ctx.beginPath();
+        ctx.moveTo(x1, fy1); ctx.lineTo(nx1, fny1);
+        ctx.stroke();
       }
-      // Occasional darker "stained" brick
-      if (((b.id + row) % 5) === 0) {
-        const sx = px + off + ((b.id * 11) % Math.max(1, w - brickW));
-        ctx.fillStyle = shadeHex(wallColor, -28);
-        ctx.fillRect(sx + 1, y - courseH + 1, brickW - 2, courseH - 1);
-      }
-    }
-    // Foundation course — slightly taller darker stones
-    ctx.fillStyle = shadeHex(wallColor, -32);
-    ctx.fillRect(px, py + h - 4, w, 4);
-    ctx.fillStyle = shadeHex(wallColor, -22);
-    for (let x = px; x < px + w; x += 6) {
-      ctx.fillRect(x, py + h - 4, 0.6, 4);
-    }
-    // Corner pillars (slightly lighter quoins)
-    ctx.fillStyle = shadeHex(wallColor, 12);
-    ctx.fillRect(px, py, 2.5, h);
-    ctx.fillRect(px + w - 2.5, py, 2.5, h);
-  } else if (style === 1) {
-    // ===== CONCRETE PANELS ===== vertical seams + horizontal floor lines + weathering
-    ctx.strokeStyle = shadeHex(wallColor, -28);
-    ctx.lineWidth = 1;
-    for (let x = px + 16; x < px + w; x += 16) {
-      ctx.beginPath();
-      ctx.moveTo(x, py);
-      ctx.lineTo(x, py + h);
-      ctx.stroke();
-    }
-    // Horizontal floor seam every 24px
-    ctx.strokeStyle = shadeHex(wallColor, -20);
-    for (let y = py + 24; y < py + h; y += 24) {
-      ctx.beginPath();
-      ctx.moveTo(px, y);
-      ctx.lineTo(px + w, y);
-      ctx.stroke();
-    }
-    // Weathering streaks under each seam (rust/dirt drips)
-    ctx.fillStyle = "rgba(60,45,30,0.18)";
-    for (let x = px + 16; x < px + w; x += 16) {
-      const len = 6 + ((b.id * 13 + x) % 12);
-      ctx.fillRect(x - 0.5, py + 24, 1.2, len);
-    }
-    // Vents at base
-    ctx.fillStyle = shadeHex(wallColor, -38);
-    for (let x = px + 4; x < px + w - 4; x += 32) {
-      ctx.fillRect(x, py + h - 6, 6, 2);
-      ctx.fillStyle = shadeHex(wallColor, -50);
-      ctx.fillRect(x + 1, py + h - 5, 4, 0.5);
-      ctx.fillStyle = shadeHex(wallColor, -38);
-    }
-    // Foundation
-    ctx.fillStyle = shadeHex(wallColor, -28);
-    ctx.fillRect(px, py + h - 3, w, 3);
-  } else {
-    // ===== GLASS TOWER ===== horizontal stripes + vertical mullion columns + reflection sheen
-    ctx.fillStyle = isNight ? shadeHex(wallColor, -10) : shadeHex(wallColor, 15);
-    for (let y = py + 4; y < py + h; y += 6) {
-      ctx.fillRect(px, y, w, 2);
-    }
-    // Vertical mullion columns
-    ctx.fillStyle = isNight ? shadeHex(wallColor, -32) : shadeHex(wallColor, -18);
-    for (let x = px + 6; x < px + w; x += 12) {
-      ctx.fillRect(x, py, 0.8, h);
-    }
-    // Strong vertical reflection band (one bright stripe)
-    if (!isNight) {
-      const refX = px + ((b.id * 17) % Math.max(1, w - 6));
-      const refGrad = ctx.createLinearGradient(refX, py, refX + 4, py);
-      refGrad.addColorStop(0, "rgba(255,255,255,0)");
-      refGrad.addColorStop(0.5, "rgba(255,255,255,0.32)");
-      refGrad.addColorStop(1, "rgba(255,255,255,0)");
-      ctx.fillStyle = refGrad;
-      ctx.fillRect(refX, py, 4, h);
-    }
-    // Foundation strip
-    ctx.fillStyle = shadeHex(wallColor, -35);
-    ctx.fillRect(px, py + h - 4, w, 4);
-  }
-
-  // Universal subtle base shadow strip — simulates ambient occlusion
-  // where the building meets the ground.
-  ctx.fillStyle = "rgba(0,0,0,0.22)";
-  ctx.fillRect(px, py + h - 1, w, 1);
-
-  // Side walls extruded toward NW (camera looks SE-ish): visible north/west walls
-  // North wall (top side extruded up)
-  ctx.fillStyle = light;
-  ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.lineTo(px + w, py);
-  ctx.lineTo(px + w - ext, py - ext);
-  ctx.lineTo(px - ext, py - ext);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // West wall
-  ctx.fillStyle = shadeHex(wallColor, -10);
-  ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.lineTo(px - ext, py - ext);
-  ctx.lineTo(px - ext, py + h - ext);
-  ctx.lineTo(px, py + h);
-  ctx.closePath();
-  ctx.fill();
-  ctx.stroke();
-
-  // Roof (top, slightly inset)
-  ctx.fillStyle = roofColor;
-  ctx.beginPath();
-  ctx.moveTo(px - ext, py - ext);
-  ctx.lineTo(px + w - ext, py - ext);
-  ctx.lineTo(px + w - ext, py + h - ext);
-  ctx.lineTo(px - ext, py + h - ext);
-  ctx.closePath();
-  ctx.fill();
-  ctx.strokeStyle = dark;
-  ctx.lineWidth = 1;
-  ctx.stroke();
-
-  // Roof parapet edge
-  ctx.fillStyle = shadeHex(roofColor, -15);
-  ctx.fillRect(px - ext, py - ext, w, 2);
-  ctx.fillRect(px - ext, py - ext, 2, h);
-
-  // Roof details: HVAC, water tower, vents, antenna — vary by id
-  const seed = b.id;
-  ctx.fillStyle = shadeHex(roofColor, -20);
-  const rdx = px - ext + w * 0.2;
-  const rdy = py - ext + h * 0.2;
-  ctx.fillRect(rdx, rdy, 12, 10);
-  ctx.fillStyle = shadeHex(roofColor, -10);
-  ctx.fillRect(rdx + 2, rdy + 2, 8, 6);
-  // Second AC unit
-  ctx.fillStyle = shadeHex(roofColor, -25);
-  ctx.fillRect(rdx + 16, rdy + 4, 7, 7);
-  // Water tower (every 4th building)
-  if (seed % 4 === 0) {
-    const wtx = px - ext + w * 0.6;
-    const wty = py - ext + h * 0.55;
-    ctx.fillStyle = "#7a5530";
-    ctx.fillRect(wtx - 4, wty - 8, 1, 8);
-    ctx.fillRect(wtx + 4, wty - 8, 1, 8);
-    ctx.fillStyle = "#9a7a4a";
-    ctx.beginPath();
-    ctx.arc(wtx, wty - 10, 4.5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#5a3a18";
-    ctx.beginPath();
-    ctx.arc(wtx, wty - 11.5, 4.5, Math.PI, 0);
-    ctx.fill();
-  }
-  // Antenna (every 3rd)
-  if (seed % 3 === 0) {
-    const ax = px - ext + w * 0.8;
-    const ay = py - ext + h * 0.3;
-    ctx.strokeStyle = "#aaaaaa";
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(ax, ay);
-    ctx.lineTo(ax, ay - 14);
-    ctx.stroke();
-    if (isNight) {
-      ctx.fillStyle = "#ff4040";
-      ctx.beginPath();
-      ctx.arc(ax, ay - 14, 1.2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-  // Skylight (every 5th building)
-  if (seed % 5 === 0) {
-    ctx.fillStyle = isNight ? "rgba(255,224,128,0.85)" : "rgba(180,220,255,0.5)";
-    ctx.fillRect(px - ext + w * 0.45, py - ext + h * 0.6, 14, 8);
-    ctx.strokeStyle = "#222";
-    ctx.lineWidth = 0.5;
-    ctx.strokeRect(px - ext + w * 0.45, py - ext + h * 0.6, 14, 8);
-  }
-  // Satellite dish (every 6th)
-  if (seed % 6 === 0) {
-    const dx = px - ext + w * 0.4;
-    const dy = py - ext + h * 0.45;
-    ctx.fillStyle = "#cdcdcd";
-    ctx.beginPath();
-    ctx.ellipse(dx, dy, 5, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.strokeStyle = "#5a5a5a";
-    ctx.lineWidth = 0.5;
-    ctx.stroke();
-    ctx.fillStyle = "#3a3a3a";
-    ctx.fillRect(dx - 0.3, dy - 0.3, 0.6, 4); // mast
-  }
-  // Rooftop billboard (every 7th building, only on taller ones)
-  if (seed % 7 === 0 && b.height > 50) {
-    const bbx = px - ext + 4;
-    const bby = py - ext + h * 0.75;
-    const bbw = w - 10;
-    const bbh = 9;
-    // Frame
-    ctx.fillStyle = "#1a1a1a";
-    ctx.fillRect(bbx - 1, bby - 1, bbw + 2, bbh + 2);
-    // Bright ad face — varies by id
-    const adColors = ["#e63946", "#f4a261", "#2a9d8f", "#264653", "#9b5de5"];
-    ctx.fillStyle = adColors[seed % adColors.length]!;
-    ctx.fillRect(bbx, bby, bbw, bbh);
-    // Fake "text" stripes on ad
-    ctx.fillStyle = "rgba(255,255,255,0.85)";
-    ctx.fillRect(bbx + 2, bby + 2, bbw - 4, 1.2);
-    ctx.fillRect(bbx + 2, bby + 5, (bbw - 4) * 0.6, 1);
-    // Support legs
-    ctx.fillStyle = "#2a2a2a";
-    ctx.fillRect(bbx + 2, bby + bbh, 1, 4);
-    ctx.fillRect(bbx + bbw - 3, bby + bbh, 1, 4);
-    // Light rim at night
-    if (isNight) {
-      ctx.shadowColor = adColors[seed % adColors.length]!;
-      ctx.shadowBlur = 6;
-      ctx.fillStyle = adColors[seed % adColors.length]!;
-      ctx.fillRect(bbx, bby, bbw, 1);
-      ctx.shadowBlur = 0;
-    }
-  }
-
-  // Windows - on walls (north and west visible) — now with frames + sills
-  const windowBase = isNight ? "#ffe080" : "rgba(180,220,255,0.55)";
-  const windowDark = isNight ? "rgba(40,40,60,0.85)" : "rgba(80,100,120,0.4)";
-  const frame = "rgba(20,20,30,0.85)";
-  // North wall windows
-  const winRows = Math.max(1, Math.floor(ext / 6));
-  const winCols = Math.max(2, Math.floor(w / 12));
-  for (let r = 0; r < winRows; r++) {
-    for (let c = 0; c < winCols; c++) {
-      const lit = isNight && (((b.id * 7 + r * 13 + c * 31) % 7) < 4);
-      const wx = px + 6 + c * 12 - ((r + 0.5) * ext) / winRows;
-      const wy = py - ((r + 0.5) * ext) / winRows;
-      // frame
-      ctx.fillStyle = frame;
-      ctx.fillRect(wx - 0.5, wy - 2, 6, 4);
-      // glass
-      ctx.fillStyle = lit ? windowBase : windowDark;
-      ctx.fillRect(wx, wy - 1.5, 5, 3);
-      // mullion (cross)
-      ctx.fillStyle = frame;
-      ctx.fillRect(wx + 2, wy - 1.5, 0.5, 3);
-      // Tiny sill highlight
-      ctx.fillStyle = "rgba(255,255,255,0.1)";
-      ctx.fillRect(wx, wy + 1, 5, 0.5);
-    }
-  }
-  // West wall windows
-  const wWinRows = winRows;
-  const wWinCols = Math.max(2, Math.floor(h / 12));
-  for (let r = 0; r < wWinRows; r++) {
-    for (let c = 0; c < wWinCols; c++) {
-      const lit = isNight && (((b.id * 11 + r * 17 + c * 29) % 7) < 4);
-      const wx = px - ((r + 0.5) * ext) / wWinRows;
-      const wy = py + 6 + c * 12 - ((r + 0.5) * ext) / wWinRows;
-      ctx.fillStyle = frame;
-      ctx.fillRect(wx - 2, wy - 0.5, 4, 6);
-      ctx.fillStyle = lit ? windowBase : windowDark;
-      ctx.fillRect(wx - 1.5, wy, 3, 5);
-      ctx.fillStyle = frame;
-      ctx.fillRect(wx - 1.5, wy + 2, 3, 0.5);
-    }
-  }
-  // Ground-floor windows on the south face (front of building) for shorter buildings
-  if (b.height < 60) {
-    // FRONT DOOR — a single dark double-door panel near the center
-    const doorW = 8;
-    const doorH = 9;
-    const doorX = px + w / 2 - doorW / 2;
-    const doorY = py + h - doorH - 1;
-    // Door frame
-    ctx.fillStyle = shadeHex(wallColor, -38);
-    ctx.fillRect(doorX - 1, doorY - 1, doorW + 2, doorH + 1);
-    // Door panels (two halves)
-    ctx.fillStyle = shadeHex(wallColor, -28);
-    ctx.fillRect(doorX, doorY, doorW / 2 - 0.3, doorH);
-    ctx.fillRect(doorX + doorW / 2 + 0.3, doorY, doorW / 2 - 0.3, doorH);
-    // Door handles
-    ctx.fillStyle = "#d4af37";
-    ctx.fillRect(doorX + doorW / 2 - 1.3, doorY + doorH / 2, 0.8, 0.8);
-    ctx.fillRect(doorX + doorW / 2 + 0.5, doorY + doorH / 2, 0.8, 0.8);
-    // Stoop / threshold (slightly lighter strip in front)
-    ctx.fillStyle = shadeHex(wallColor, -10);
-    ctx.fillRect(doorX - 2, doorY + doorH, doorW + 4, 1);
-    const groundRows = 1;
-    const groundCols = Math.max(2, Math.floor(w / 14));
-    for (let c = 0; c < groundCols; c++) {
-      const wx = px + 6 + c * 14;
-      const wy = py + h - 10;
-      ctx.fillStyle = frame;
-      ctx.fillRect(wx - 0.5, wy - 0.5, 7, 6);
-      ctx.fillStyle = isNight ? "#ffd870" : "rgba(180,220,255,0.55)";
-      ctx.fillRect(wx, wy, 6, 5);
-      // mullion
-      ctx.fillStyle = frame;
-      ctx.fillRect(wx + 2.8, wy, 0.4, 5);
-      // awning every other
-      if (c % 2 === 0) {
-        ctx.fillStyle = b.neonColor;
-        ctx.fillRect(wx - 1, wy - 2, 8, 1.5);
-        ctx.fillStyle = shadeHex(b.neonColor, -25);
-        for (let k = 0; k < 4; k++) {
-          ctx.fillRect(wx + k * 2, wy - 2, 1, 1.5);
+      // Pillars
+      const pillars = Math.max(2, Math.floor(h / 12));
+      for (let i = 0; i <= pillars; i++) {
+        const p1 = y1 + i * (h / pillars);
+        const pn1 = ny1 + i * (h / pillars);
+        // Draw window inset
+        if (i < pillars) {
+          ctx.fillStyle = isNight && (b.id + i) % 5 === 0 ? "#ffd040" : "rgba(0,0,0,0.3)";
+          const wx = x1 + (nx1 - x1) * 0.5 - 2;
+          const wy = p1 + (h / pillars) * 0.2;
+          const wny = pn1 + (h / pillars) * 0.2;
+          ctx.beginPath();
+          ctx.moveTo(wx, wy); ctx.lineTo(wx + 4, wy); ctx.lineTo(wx + 4, wny + (h / pillars) * 0.6); ctx.lineTo(wx, wny + (h / pillars) * 0.6);
+          ctx.fill();
         }
       }
+    } else {
+      // Horizontal wall (Top or Bottom)
+      const segments = Math.max(2, Math.floor(w / 16));
+      for (let i = 1; i < segments; i++) {
+        const fx1 = x1 + i * (w / segments);
+        const fnx1 = nx1 + i * (w / segments);
+        ctx.beginPath();
+        ctx.moveTo(fx1, y1); ctx.lineTo(fnx1, ny1);
+        ctx.stroke();
+      }
+      // Windows
+      const winCols = Math.max(1, Math.floor(w / 12));
+      for (let i = 0; i < winCols; i++) {
+        const wx = x1 + (i + 0.2) * (w / winCols);
+        const wnx = nx1 + (i + 0.2) * (w / winCols);
+        const ww = (w / winCols) * 0.6;
+        ctx.fillStyle = isNight && (b.id + i) % 7 === 0 ? "#ffd040" : "rgba(0,0,0,0.3)";
+        ctx.beginPath();
+        ctx.moveTo(wx, y1 + (ny1 - y1) * 0.3); ctx.lineTo(wx + ww, y1 + (ny1 - y1) * 0.3);
+        ctx.lineTo(wnx + ww, ny1 + (ny1 - y1) * 0.3); ctx.lineTo(wnx, ny1 + (ny1 - y1) * 0.3);
+        ctx.fill();
+      }
     }
+  };
+
+  // Right
+  if (extX < 0) drawWall(px + w, py, px + w, py + h, rx + rw, ry + rh, rx + rw, ry, shadeHex(dark, -5), true);
+  // Left
+  if (extX > 0) drawWall(px, py, px, py + h, rx, ry + rh, rx, ry, dark, true);
+  // Top
+  if (extY > 0) drawWall(px, py, px + w, py, rx + rw, ry, rx, ry, shadeHex(dark, -10), false);
+  // Bottom
+  if (extY < 0) drawWall(px, py + h, px + w, py + h, rx + rw, ry + rh, rx, ry + rh, shadeHex(dark, 5), false);
+
+  // 2. ROOF
+  const roofGrad = ctx.createLinearGradient(rx, ry, rx + rw, ry + rh);
+  roofGrad.addColorStop(0, shadeHex(roofColor, 10));
+  roofGrad.addColorStop(1, shadeHex(roofColor, -15));
+  ctx.fillStyle = roofGrad;
+  ctx.fillRect(rx, ry, rw, rh);
+
+  // Roof borders
+  ctx.strokeStyle = vDark;
+  ctx.lineWidth = 1;
+  ctx.strokeRect(rx, ry, rw, rh);
+
+  // Interior roof ledge (parapet)
+  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.fillRect(rx, ry, rw, 2);
+  ctx.fillRect(rx, ry, 2, rh);
+  ctx.fillStyle = "rgba(255,255,255,0.05)";
+  ctx.fillRect(rx, ry + rh - 2, rw, 2);
+  ctx.fillRect(rx + rw - 2, ry, 2, rh);
+
+  // Roof details
+  ctx.fillStyle = shadeHex(roofColor, -25);
+  if (rw > 40 && rh > 40) {
+    // Large AC unit
+    ctx.fillRect(rx + rw * 0.6, ry + rh * 0.3, 12, 10);
+    ctx.fillStyle = "rgba(0,0,0,0.3)";
+    ctx.fillRect(rx + rw * 0.6 + 2, ry + rh * 0.3 + 2, 8, 6);
   }
 
-  // Neon sign at night
-  if (b.hasNeon && isNight) {
-    const t = performance.now() / 400;
-    const pulse = 0.6 + Math.sin(t + b.id) * 0.3;
-    ctx.shadowColor = b.neonColor;
-    ctx.shadowBlur = 10;
-    ctx.fillStyle = b.neonColor;
-    ctx.globalAlpha = pulse;
-    ctx.fillRect(px + w / 2 - 8, py - ext + 4, 16, 3);
-    ctx.globalAlpha = 1;
-    ctx.shadowBlur = 0;
+  // Gravel noise
+  ctx.fillStyle = "rgba(0,0,0,0.08)";
+  for (let i = 0; i < (rw * rh) / 80; i++) {
+    const gx = rx + ((b.id * 17 + i * 23) % rw);
+    const gy = ry + ((b.id * 11 + i * 19) % rh);
+    ctx.fillRect(gx, gy, 1, 1);
   }
 }
 
@@ -1370,13 +1091,9 @@ function drawParticles(ctx: CanvasRenderingContext2D, particles: Particle[]) {
 }
 
 // PROPS — trees, hydrants, mailboxes, benches, trash cans, lamp posts, bushes
-function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
-  const night = state.timeOfDay === "night";
-  const snowing = state.weather === "snow";
-  // shadow — kept subtle (low alpha) so it reads as a contact shadow, not a
-  // dark blob on the road / sidewalk.
+function drawPropShadow(ctx: CanvasRenderingContext2D, p: Prop) {
   ctx.save();
-  ctx.fillStyle = night ? "rgba(0,0,0,0.14)" : "rgba(0,0,0,0.20)";
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
   if (p.kind === "tree" || p.kind === "oak") {
     ctx.beginPath();
     ctx.ellipse(p.x + 3, p.y + 4, 9, 4, 0, 0, Math.PI * 2);
@@ -1389,10 +1106,6 @@ function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
     ctx.beginPath();
     ctx.ellipse(p.x + 4, p.y + 5, 8, 3, 0, 0, Math.PI * 2);
     ctx.fill();
-  } else if (p.kind === "cactus") {
-    ctx.beginPath();
-    ctx.ellipse(p.x + 2, p.y + 4, 4, 1.5, 0, 0, Math.PI * 2);
-    ctx.fill();
   } else if (p.kind === "lamp") {
     ctx.beginPath();
     ctx.ellipse(p.x + 4, p.y + 3, 6, 2, 0, 0, Math.PI * 2);
@@ -1403,6 +1116,11 @@ function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
     ctx.fill();
   }
   ctx.restore();
+}
+
+function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
+  const night = state.timeOfDay === "night";
+  const snowing = state.weather === "snow";
 
   if (p.kind === "tree") {
     // Generic deciduous — round canopy with multiple lobes
@@ -1795,6 +1513,26 @@ function drawProp(ctx: CanvasRenderingContext2D, p: Prop, state: GameState) {
   }
 }
 
+function drawCarShadow(ctx: CanvasRenderingContext2D, v: Vehicle, ox = 3, oy = 4) {
+  ctx.save();
+  ctx.translate(v.x + ox, v.y + oy);
+  ctx.rotate(v.angle);
+  ctx.fillStyle = "rgba(0,0,0,0.22)";
+  ctx.beginPath();
+  ctx.roundRect(-v.length / 2, -v.width / 2, v.length, v.width, 4);
+  ctx.fill();
+  ctx.restore();
+}
+
+function drawHumanShadow(ctx: CanvasRenderingContext2D, h: Human, ox = 1.5, oy = 2) {
+  ctx.save();
+  ctx.fillStyle = "rgba(0,0,0,0.18)";
+  ctx.beginPath();
+  ctx.ellipse(h.x + ox, h.y + oy, 3.5, 2.2, 0, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.restore();
+}
+
 // ANIMALS
 function drawAnimalShadow(ctx: CanvasRenderingContext2D, a: Animal) {
   const flyOff = a.flyZ * 12;
@@ -1809,107 +1547,120 @@ function drawAnimalShadow(ctx: CanvasRenderingContext2D, a: Animal) {
 
 function drawAnimal(ctx: CanvasRenderingContext2D, a: Animal) {
   ctx.save();
-  // visual lift when pigeon flies
   const lift = a.flyZ * 10;
   ctx.translate(a.x, a.y - lift);
   ctx.rotate(a.angle);
+
   if (a.hp <= 0) {
-    // limp body
     ctx.fillStyle = a.furColor;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
+    // blood puddle
+    ctx.fillStyle = "rgba(160, 24, 24, 0.4)";
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
     return;
   }
-  if (a.kind === "dog") {
-    // body (oval)
-    ctx.fillStyle = a.furColor;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 6, 3.5, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // head
-    ctx.beginPath();
-    ctx.arc(5, 0, 2.5, 0, Math.PI * 2);
-    ctx.fill();
-    // tail wag
-    const tw = Math.sin(a.walkPhase) * 1.5;
-    ctx.strokeStyle = a.furColor;
-    ctx.lineWidth = 1;
-    ctx.beginPath();
-    ctx.moveTo(-5, 0);
-    ctx.lineTo(-8, tw);
-    ctx.stroke();
-    // legs (simple dots that bob)
-    ctx.fillStyle = shadeHex(a.furColor, -25);
-    const lp = Math.sin(a.walkPhase) * 1.2;
-    ctx.beginPath();
-    ctx.arc(-2, 2 + lp, 0.9, 0, Math.PI * 2);
-    ctx.arc(2, 2 - lp, 0.9, 0, Math.PI * 2);
-    ctx.arc(-2, -2 - lp, 0.9, 0, Math.PI * 2);
-    ctx.arc(2, -2 + lp, 0.9, 0, Math.PI * 2);
-    ctx.fill();
-    // ears
-    ctx.fillStyle = shadeHex(a.furColor, -15);
-    ctx.beginPath();
-    ctx.moveTo(5.5, -1.5);
-    ctx.lineTo(7, -3);
-    ctx.lineTo(6, -0.5);
-    ctx.fill();
-  } else if (a.kind === "cat") {
-    ctx.fillStyle = a.furColor;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.arc(4, 0, 2.2, 0, Math.PI * 2);
-    ctx.fill();
-    // pointy ears
-    ctx.beginPath();
-    ctx.moveTo(3.5, -1.5);
-    ctx.lineTo(4.5, -3.5);
-    ctx.lineTo(5, -1.2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.moveTo(3.5, 1.5);
-    ctx.lineTo(4.5, 3.5);
-    ctx.lineTo(5, 1.2);
-    ctx.fill();
-    // tail curling
-    ctx.strokeStyle = a.furColor;
-    ctx.lineWidth = 1.2;
-    ctx.beginPath();
-    ctx.moveTo(-4, 0);
-    ctx.quadraticCurveTo(-7, Math.sin(a.walkPhase) * 2, -8, -2);
-    ctx.stroke();
-  } else {
-    // pigeon - small grey body, beak, flapping wings if flying
-    ctx.fillStyle = a.furColor;
-    ctx.beginPath();
-    ctx.ellipse(0, 0, 3, 2, 0, 0, Math.PI * 2);
-    ctx.fill();
-    // head
-    ctx.beginPath();
-    ctx.arc(2.5, 0, 1.4, 0, Math.PI * 2);
-    ctx.fill();
-    // beak
-    ctx.fillStyle = "#e8a83a";
-    ctx.beginPath();
-    ctx.moveTo(3.8, 0);
-    ctx.lineTo(5, -0.4);
-    ctx.lineTo(5, 0.4);
-    ctx.fill();
-    // wings flap when flying
-    if (a.flyZ > 0.05) {
-      const wf = Math.sin(a.walkPhase * 2) * 2;
-      ctx.fillStyle = shadeHex(a.furColor, -20);
-      ctx.beginPath();
-      ctx.ellipse(-0.5, -3, 3, 1.2 + wf * 0.4, 0, 0, Math.PI * 2);
-      ctx.fill();
-      ctx.beginPath();
-      ctx.ellipse(-0.5, 3, 3, 1.2 + wf * 0.4, 0, 0, Math.PI * 2);
-      ctx.fill();
+
+  const walk = Math.sin(a.walkPhase) * 2;
+  const color = a.furColor;
+
+  if (a.kind === "deer") {
+    ctx.fillStyle = color;
+    // Body
+    ctx.beginPath(); ctx.ellipse(0, 0, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // Neck and Head
+    ctx.save();
+    ctx.translate(6, -2);
+    ctx.rotate(-0.4);
+    ctx.fillRect(0, -2, 4, 6); // Neck
+    ctx.translate(3, -2);
+    ctx.beginPath(); ctx.ellipse(0, 0, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
+    // Antlers (if breed > 1)
+    if (a.breed > 1) {
+      ctx.strokeStyle = "#4a3a2a"; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(0, -1); ctx.lineTo(-2, -5); ctx.lineTo(-4, -4);
+      ctx.moveTo(-2, -5); ctx.lineTo(-1, -7); ctx.stroke();
     }
+    ctx.restore();
+    // Legs
+    ctx.fillStyle = shadeHex(color, -20);
+    ctx.fillRect(-5, 3 + walk, 1.5, 5);
+    ctx.fillRect(3, 3 - walk, 1.5, 5);
+  } else if (a.kind === "bear") {
+    ctx.fillStyle = color;
+    // Massive body
+    ctx.beginPath(); ctx.ellipse(0, 0, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
+    // Head
+    ctx.save(); ctx.translate(9, 0);
+    ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(3.5, 0, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // Thick legs
+    ctx.fillStyle = shadeHex(color, -15);
+    ctx.beginPath(); ctx.ellipse(-6, 6 + walk * 0.5, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(6, 6 - walk * 0.5, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
+  } else if (a.kind === "wolf") {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(7, 0);
+    ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#111"; ctx.fillRect(2, -1, 3, 2); // snout
+    ctx.restore();
+    // tail
+    ctx.strokeStyle = color; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(-11, walk); ctx.stroke();
+  } else if (a.kind === "cow") {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(-10, -6, 20, 12, 3); ctx.fill();
+    // spots
+    ctx.fillStyle = "#222";
+    ctx.beginPath(); ctx.arc(-4, -2, 4, 0, Math.PI * 2); ctx.arc(5, 3, 3, 0, Math.PI * 2); ctx.fill();
+    // head
+    ctx.fillStyle = color; ctx.save(); ctx.translate(11, 0);
+    ctx.beginPath(); ctx.roundRect(0, -3.5, 6, 7, 2); ctx.fill();
+    ctx.restore();
+  } else if (a.kind === "boar") {
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
+    // head
+    ctx.save(); ctx.translate(6, 0);
+    ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(6, 0); ctx.lineTo(0, 4); ctx.fill();
+    // tusks
+    ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(4, 1); ctx.lineTo(6, -1); ctx.moveTo(4, -1); ctx.lineTo(6, 1); ctx.stroke();
+    ctx.restore();
+  } else if (a.kind === "dog") {
+    // Existing dog logic
+    let bodyColor = a.furColor;
+    let accentColor = shadeHex(bodyColor, -25);
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath(); ctx.ellipse(0, 0, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(5, 0);
+    if (a.state === "bark") ctx.rotate(Math.sin(a.walkPhase * 10) * 0.2 - 0.2);
+    ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = accentColor; ctx.fillRect(1.5, -0.8, 2, 1.6);
+    ctx.restore();
+    const tw = Math.sin(a.walkPhase * (a.state === "chase" ? 15 : 6)) * 2;
+    ctx.strokeStyle = bodyColor; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(-8, tw); ctx.stroke();
+  } else if (a.kind === "cat") {
+    // Existing cat logic
+    ctx.fillStyle = a.furColor;
+    const isSitting = a.state === "sit";
+    if (isSitting) ctx.beginPath(); ctx.ellipse(0, 0, 4, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(isSitting ? 3 : 4, 0);
+    ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+  } else {
+    // Pigeon
+    ctx.fillStyle = "#7e8a99";
+    ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 2.2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(3, 0, 1.6, 0, Math.PI * 2); ctx.fill();
+    const wf = (a.flyZ > 0.05) ? Math.sin(a.walkPhase * 2.5) * 2 : 0;
+    ctx.fillStyle = "#657080";
+    ctx.beginPath(); ctx.ellipse(-0.5, -2, 3, Math.abs(1.2 + wf), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-0.5, 2, 3, Math.abs(1.2 + wf), 0, 0, Math.PI * 2); ctx.fill();
   }
   ctx.restore();
 }
@@ -1963,95 +1714,127 @@ function drawRain(ctx: CanvasRenderingContext2D, state: GameState, rc: RenderCon
     rc.viewW * 2,
     rc.viewH * 2,
   );
+
+  // Wet ground specular sheen
+  const cam = state.camera;
+  const viewLeft = cam.x - rc.viewW / cam.zoom / 2;
+  const viewTop = cam.y - rc.viewH / cam.zoom / 2;
+  const viewRight = cam.x + rc.viewW / cam.zoom / 2;
+  const viewBottom = cam.y + rc.viewH / cam.zoom / 2;
+
+  ctx.save();
+  ctx.translate(rc.viewW / 2 - cam.x * cam.zoom, rc.viewH / 2 - cam.y * cam.zoom);
+  ctx.scale(cam.zoom, cam.zoom);
+  ctx.globalCompositeOperation = "overlay";
+  ctx.fillStyle = "rgba(255,255,255,0.08)";
+
+  // Draw vertical streaks for a wet road look
+  const seed = Math.floor(cam.x / 200);
+  for (let i = 0; i < 15; i++) {
+    const rx = (viewLeft - 100) + ((seed * 131 + i * 271) % (rc.viewW / cam.zoom + 200));
+    const ry = viewTop;
+    const rw = 2 + (i % 3);
+    const rh = rc.viewH / cam.zoom;
+    ctx.fillRect(rx, ry, rw, rh);
+  }
+  ctx.restore();
 }
 
-// ─── TRAFFIC LIGHTS ─────────────────────────────────────────────────────────
-// At each intersection corner, draw a small 3-bulb traffic light head facing
-// the road it controls. Active bulb is bright (red/yellow/green) and the
-// other two are dim. trafficPhase 0 = N/S green (E/W red), 1 = E/W green
-// (N/S red). Last 1.5s of the green window = yellow.
+// ─── TRAFFIC SIGNALS (Mast Arms & Heads) ────────────────────────────────────
+function signalForDirection(dir: "ns" | "ew", state: GameState): "red" | "yellow" | "green" {
+  const TRAFFIC_GREEN = 14;
+  const phase = state.trafficPhase; // 0=NS green, 1=EW green
+  const timer = state.trafficPhaseTimer;
+  const isYellow = timer > TRAFFIC_GREEN - 1.5;
+
+  const currentActive = dir === "ns" ? 0 : 1;
+  if (phase === currentActive) {
+    return isYellow ? "yellow" : "green";
+  }
+  return "red";
+}
+
 function drawTrafficLights(rc: RenderContext) {
   const { ctx, world, state } = rc;
   const cam = state.camera;
-  const halfW = rc.viewW / cam.zoom / 2 + 80;
-  const halfH = rc.viewH / cam.zoom / 2 + 80;
-  const TRAFFIC_GREEN = 14;
-  const phase = state.trafficPhase;
-  const yellow = state.trafficPhaseTimer > TRAFFIC_GREEN - 1.5;
-  // ns = north-south traffic, ew = east-west traffic
-  const nsState: "red" | "yellow" | "green" =
-    phase === 0 ? (yellow ? "yellow" : "green") : "red";
-  const ewState: "red" | "yellow" | "green" =
-    phase === 1 ? (yellow ? "yellow" : "green") : "red";
+  const tNow = performance.now() / 1000;
+  const halfW = rc.viewW / cam.zoom / 2 + 120;
+  const halfH = rc.viewH / cam.zoom / 2 + 120;
 
-  const drawHead = (
-    cx: number,
-    cy: number,
-    facing: "n" | "s" | "e" | "w",
-    s: "red" | "yellow" | "green",
-  ) => {
-    // Rotate so bulbs run along the road. NS-controlling lights mount on
-    // the curb facing the oncoming N or S traffic and have bulbs stacked
-    // vertically; EW-controlling lights mount facing E or W with bulbs
-    // stacked horizontally.
-    const vertical = facing === "n" || facing === "s";
-    const w = vertical ? 7 : 22;
-    const h = vertical ? 22 : 7;
-    // Housing
-    ctx.fillStyle = "#1a1a1a";
-    ctx.fillRect(cx - w / 2, cy - h / 2, w, h);
-    ctx.strokeStyle = "#000";
-    ctx.lineWidth = 0.6;
-    ctx.strokeRect(cx - w / 2, cy - h / 2, w, h);
-    // Bulbs (top→bottom = R,Y,G when vertical; left→right = R,Y,G when horizontal)
-    const bulb = (i: number, color: string, on: boolean) => {
-      let bx: number;
-      let by: number;
-      if (vertical) {
-        bx = cx;
-        by = cy - h / 2 + 4 + i * 7;
-      } else {
-        bx = cx - w / 2 + 4 + i * 7;
-        by = cy;
-      }
+  const nsState = signalForDirection("ns", state);
+  const ewState = signalForDirection("ew", state);
+
+  const drawSignalHead = (x: number, y: number, angle: number, s: "red" | "yellow" | "green") => {
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(angle);
+    // Housing (yellow-orange GTA style)
+    ctx.fillStyle = "#e0a020";
+    ctx.strokeStyle = "#806010";
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.roundRect(-4, -10, 8, 20, 2);
+    ctx.fill();
+    ctx.stroke();
+    // Visors (black caps)
+    ctx.fillStyle = "#111";
+    for (let i = 0; i < 3; i++) {
+      ctx.fillRect(-3, -8 + i * 6, 6, 1.5);
+    }
+    // Bulbs
+    const bulb = (idx: number, color: string, on: boolean) => {
+      const by = -6 + idx * 6;
+      ctx.fillStyle = on ? color : shadeHex(color, -60);
       ctx.beginPath();
-      ctx.arc(bx, by, 2.2, 0, Math.PI * 2);
-      ctx.fillStyle = on ? color : "#2a2a2a";
+      ctx.arc(0, by, 1.8, 0, Math.PI * 2);
       ctx.fill();
       if (on) {
-        // Soft halo for on-bulb
-        const grd = ctx.createRadialGradient(bx, by, 0, bx, by, 7);
-        grd.addColorStop(0, color.replace("rgb", "rgba").replace(")", ",0.55)"));
-        grd.addColorStop(1, color.replace("rgb", "rgba").replace(")", ",0)"));
+        const grd = ctx.createRadialGradient(0, by, 0, 0, by, 8);
+        grd.addColorStop(0, color.replace("rgb", "rgba").replace(")", ",0.4)"));
+        grd.addColorStop(1, "rgba(0,0,0,0)");
         ctx.fillStyle = grd;
         ctx.beginPath();
-        ctx.arc(bx, by, 7, 0, Math.PI * 2);
+        ctx.arc(0, by, 8, 0, Math.PI * 2);
         ctx.fill();
       }
     };
-    bulb(0, "rgb(230,40,40)", s === "red");
-    bulb(1, "rgb(240,200,30)", s === "yellow");
-    bulb(2, "rgb(60,210,80)", s === "green");
+    bulb(0, "rgb(255,40,40)", s === "red");
+    bulb(1, "rgb(255,210,30)", s === "yellow");
+    bulb(2, "rgb(40,255,80)", s === "green");
+    ctx.restore();
   };
 
   for (const node of world.roadGraph) {
-    if (Math.abs(node.x - cam.x) > halfW + TILE) continue;
-    if (Math.abs(node.y - cam.y) > halfH + TILE) continue;
-    // Place 4 lights, one per corner, each controlling the lane that approaches
-    // the intersection from its side. Offsets are at the edge of the
-    // intersection box (intersection is 4 tiles, ~256px square; node is the
-    // center, so half-width is ~128px). We shrink slightly so they sit on the
-    // sidewalk corner.
-    const off = TILE * 1.9;
-    // North-facing head (controls cars driving south, i.e. the southbound lane
-    // approaching from the NW corner). Mount at the NW corner of the box.
-    drawHead(node.x - off, node.y - off, "s", nsState);
-    // South-facing head at SE corner — controls northbound cars
-    drawHead(node.x + off, node.y + off, "n", nsState);
-    // East-facing head at NE corner — controls westbound cars
-    drawHead(node.x + off, node.y - off, "w", ewState);
-    // West-facing head at SW corner — controls eastbound cars
-    drawHead(node.x - off, node.y + off, "e", ewState);
+    if (Math.abs(node.x - cam.x) > halfW || Math.abs(node.y - cam.y) > halfH) continue;
+
+    // Only draw signals at actual intersections (3 or 4 way).
+    const neighborsCount = (node.dir.n >= 0 ? 1 : 0) + (node.dir.e >= 0 ? 1 : 0) + (node.dir.s >= 0 ? 1 : 0) + (node.dir.w >= 0 ? 1 : 0);
+    if (neighborsCount < 3) continue;
+
+    // GTA Style Mast Arms: 4 poles at corners, arms extend over lanes
+    const corners = [
+      { x: node.x - TILE * 1.9, y: node.y - TILE * 1.9, armX: 35, armY: 0, ang: 0, s: nsState }, // NW
+      { x: node.x + TILE * 1.9, y: node.y + TILE * 1.9, armX: -35, armY: 0, ang: Math.PI, s: nsState }, // SE
+      { x: node.x + TILE * 1.9, y: node.y - TILE * 1.9, armX: 0, armY: 35, ang: Math.PI / 2, s: ewState }, // NE
+      { x: node.x - TILE * 1.9, y: node.y + TILE * 1.9, armX: 0, armY: -35, ang: -Math.PI / 2, s: ewState }, // SW
+    ];
+
+    for (const c of corners) {
+      // Pole base
+      ctx.fillStyle = "#333";
+      ctx.beginPath();
+      ctx.arc(c.x, c.y, 3, 0, Math.PI * 2);
+      ctx.fill();
+      // Mast arm
+      ctx.strokeStyle = "#444";
+      ctx.lineWidth = 2.5;
+      ctx.beginPath();
+      ctx.moveTo(c.x, c.y);
+      ctx.lineTo(c.x + c.armX, c.y + c.armY);
+      ctx.stroke();
+      // Signal head at end of arm
+      drawSignalHead(c.x + c.armX, c.y + c.armY, c.ang, c.s);
+    }
   }
 }
 
@@ -2073,72 +1856,51 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
   const halfW = rc.viewW / cam.zoom / 2 + 80;
   const halfH = rc.viewH / cam.zoom / 2 + 80;
 
-  // ----- STREET LAMPS at every intersection (4 corners) -----
-  for (const node of world.roadGraph) {
-    if (Math.abs(node.x - cam.x) > halfW + TILE) continue;
-    if (Math.abs(node.y - cam.y) > halfH + TILE) continue;
-    const offsets: [number, number][] = [
-      [-TILE * 0.8, -TILE * 0.8],
-      [TILE * 0.8, -TILE * 0.8],
-      [-TILE * 0.8, TILE * 0.8],
-      [TILE * 0.8, TILE * 0.8],
-    ];
-    // Tiny per-lamp flicker keyed off node position so it looks organic, not synced.
-    const flicker = 1 + Math.sin(tNow * 4.2 + node.x * 0.013) * 0.05;
-    for (const [ox, oy] of offsets) {
-      const lx = node.x + ox;
-      const ly = node.y + oy;
-      // Outer warm halo — radius reduced 90→62 and alpha cut significantly
-      // so multiple lamps don't additively blow out the road into a brown
-      // wash when several halos overlap (each intersection has 4).
-      const grd = ctx.createRadialGradient(lx, ly, 0, lx, ly, 62);
-      grd.addColorStop(0, `rgba(255,225,160,${0.34 * intensity * flicker})`);
-      grd.addColorStop(0.4, `rgba(255,205,130,${0.16 * intensity})`);
-      grd.addColorStop(1, "rgba(255,200,140,0)");
-      ctx.fillStyle = grd;
-      ctx.beginPath();
-      ctx.arc(lx, ly, 62, 0, Math.PI * 2);
-      ctx.fill();
-      // Hot bulb core — softened so it doesn't read as a tiny sun
-      const core = ctx.createRadialGradient(lx, ly, 0, lx, ly, 5);
-      core.addColorStop(0, `rgba(255,250,220,${0.55 * intensity})`);
-      core.addColorStop(1, "rgba(255,240,180,0)");
-      ctx.fillStyle = core;
-      ctx.beginPath();
-      ctx.arc(lx, ly, 5, 0, Math.PI * 2);
-      ctx.fill();
-    }
+  // ----- STREET LAMPS (Prop-based) -----
+  for (const p of state.props) {
+    if (p.kind !== "lamp") continue;
+    if (Math.abs(p.x - cam.x) > halfW + 60) continue;
+    if (Math.abs(p.y - cam.y) > halfH + 60) continue;
+
+    const lx = p.x;
+    const ly = p.y - 14;
+    const flicker = 1 + Math.sin(tNow * 4.2 + p.x * 0.013) * 0.05;
+
+    const grd = ctx.createRadialGradient(lx, ly, 0, lx, ly, 115);
+    grd.addColorStop(0, `rgba(255,225,160,${0.22 * intensity * flicker})`);
+    grd.addColorStop(0.3, `rgba(255,215,140,${0.08 * intensity})`);
+    grd.addColorStop(0.7, `rgba(255,205,130,${0.02 * intensity})`);
+    grd.addColorStop(1, "rgba(255,200,140,0)");
+    ctx.fillStyle = grd;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 115, 0, Math.PI * 2);
+    ctx.fill();
+
+    const core = ctx.createRadialGradient(lx, ly, 0, lx, ly, 5);
+    core.addColorStop(0, `rgba(255,250,220,${0.45 * intensity})`);
+    core.addColorStop(1, "rgba(255,240,180,0)");
+    ctx.fillStyle = core;
+    ctx.beginPath();
+    ctx.arc(lx, ly, 5, 0, Math.PI * 2);
+    ctx.fill();
   }
 
   // ----- LIT WINDOWS on nearby buildings -----
-  // Procedural per-building "is this window lit" decision based on building id
-  // and a slow time-based change so a few flicker on/off.
   for (const b of world.buildings) {
     const bx = b.x * TILE;
     const by = b.y * TILE;
-    if (
-      bx + b.w * TILE < cam.x - halfW ||
-      bx > cam.x + halfW ||
-      by + b.h * TILE < cam.y - halfH ||
-      by > cam.y + halfH
-    ) {
-      continue;
-    }
+    if (bx + b.w * TILE < cam.x - halfW || bx > cam.x + halfW || by + b.h * TILE < cam.y - halfH || by > cam.y + halfH) continue;
     const w = b.w * TILE;
     const h = b.h * TILE;
-    // 4-8 windows per building, deterministic seed
     const seed = (b.id * 9301 + 49297) % 233280;
     const slowFlicker = Math.sin(tNow * 0.4 + b.id * 0.7);
     const litCount = 3 + (b.id % 5);
     for (let i = 0; i < litCount; i++) {
       const r1 = ((seed + i * 1013) % 233280) / 233280;
       const r2 = ((seed + i * 7919) % 233280) / 233280;
-      // Skip a few so not every window is lit
       if (((b.id + i) % 4) === 0 && slowFlicker < 0) continue;
       const wx = bx + 6 + r1 * (w - 12);
       const wy = by + 6 + r2 * (h - 12);
-      // Warm window halo — alpha cut so dozens of windows on tall buildings
-      // don't additively wash the whole street with orange (was 0.55).
       const grd = ctx.createRadialGradient(wx, wy, 0, wx, wy, 11);
       grd.addColorStop(0, `rgba(255,220,150,${0.30 * intensity})`);
       grd.addColorStop(1, "rgba(255,220,150,0)");
@@ -2146,34 +1908,22 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
       ctx.beginPath();
       ctx.arc(wx, wy, 11, 0, Math.PI * 2);
       ctx.fill();
-      // Bright pixel at the window itself (kept fairly punchy, it's tiny)
       ctx.fillStyle = `rgba(255,235,180,${0.7 * intensity})`;
       ctx.fillRect(wx - 0.7, wy - 0.7, 1.4, 1.4);
     }
   }
 
-  // ----- VEHICLE HEADLIGHT CONES + TAIL GLOW -----
+  // ----- VEHICLE LIGHTS -----
   for (const v of state.vehicles) {
-    if (Math.abs(v.x - cam.x) > halfW + 40) continue;
-    if (Math.abs(v.y - cam.y) > halfH + 40) continue;
+    if (Math.abs(v.x - cam.x) > halfW + 40 || Math.abs(v.y - cam.y) > halfH + 40) continue;
     const cosA = Math.cos(v.angle);
     const sinA = Math.sin(v.angle);
     const halfL = v.length / 2;
     const halfWv = v.width / 2;
-    // Front bumper midpoints for left/right headlights
     const lights: [number, number][] = [
-      [
-        v.x + cosA * halfL - sinA * (halfWv - 3),
-        v.y + sinA * halfL + cosA * (halfWv - 3),
-      ],
-      [
-        v.x + cosA * halfL + sinA * (halfWv - 3),
-        v.y + sinA * halfL - cosA * (halfWv - 3),
-      ],
+      [v.x + cosA * halfL - sinA * (halfWv - 3), v.y + sinA * halfL + cosA * (halfWv - 3)],
+      [v.x + cosA * halfL + sinA * (halfWv - 3), v.y + sinA * halfL - cosA * (halfWv - 3)],
     ];
-    // Cone — wedge extending forward. Alpha cut roughly in half (was
-    // 0.55→0.22) and the cone tapers to a tighter spread (32 vs 36) so two
-    // overlapping cones no longer additively blow out into solid white.
     ctx.save();
     ctx.translate(v.x + cosA * halfL, v.y + sinA * halfL);
     ctx.rotate(v.angle);
@@ -2192,8 +1942,6 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
     ctx.closePath();
     ctx.fill();
     ctx.restore();
-    // Bright bulb cores at each headlight — also softened (0.95 → 0.55)
-    // and slightly smaller so the bulb reads as a glow not a flash.
     for (const [lx, ly] of lights) {
       const g = ctx.createRadialGradient(lx, ly, 0, lx, ly, 5);
       g.addColorStop(0, `rgba(255,250,225,${0.55 * intensity})`);
@@ -2203,11 +1951,8 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
       ctx.arc(lx, ly, 5, 0, Math.PI * 2);
       ctx.fill();
     }
-    // Tail glow (always on at night) — red halo behind
     const tx = v.x - cosA * halfL;
     const ty = v.y - sinA * halfL;
-    // Brake-on punches red brighter, but normal running tail is much softer
-    // (was 0.45, now 0.30) so a calm parked car doesn't glow like a flare.
     const tailIntensity = v.brake > 0.3 ? 0.65 : 0.30;
     const tg = ctx.createRadialGradient(tx, ty, 0, tx, ty, 12);
     tg.addColorStop(0, `rgba(255,60,40,${tailIntensity * intensity})`);
@@ -2216,18 +1961,12 @@ function drawNightLights(rc: RenderContext, intensity = 1) {
     ctx.beginPath();
     ctx.arc(tx, ty, 14, 0, Math.PI * 2);
     ctx.fill();
-    // Police strobe — alternating red/blue halo around the lightbar
     if (v.kind === "police") {
       const phase = Math.floor(performance.now() / 180) % 2;
       const cx = v.x;
       const cy = v.y;
       const sg = ctx.createRadialGradient(cx, cy, 0, cx, cy, 32);
-      sg.addColorStop(
-        0,
-        phase === 0
-          ? `rgba(255,80,80,${0.75 * intensity})`
-          : `rgba(80,140,255,${0.75 * intensity})`,
-      );
+      sg.addColorStop(0, phase === 0 ? `rgba(255,80,80,${0.75 * intensity})` : `rgba(80,140,255,${0.75 * intensity})`);
       sg.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = sg;
       ctx.beginPath();

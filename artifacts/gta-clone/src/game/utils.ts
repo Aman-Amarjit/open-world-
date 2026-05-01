@@ -72,3 +72,22 @@ let _idSeed = 1;
 export function newId(): number {
   return _idSeed++;
 }
+
+export function canSee(
+  x: number,
+  y: number,
+  angle: number,
+  tx: number,
+  ty: number,
+  cone: number,
+): boolean {
+  const dx = tx - x;
+  const dy = ty - y;
+  const d = Math.hypot(dx, dy);
+  if (d < 30) return true; // too close, even if facing away
+  const a = Math.atan2(dy, dx);
+  let diff = a - angle;
+  while (diff > Math.PI) diff -= Math.PI * 2;
+  while (diff < -Math.PI) diff += Math.PI * 2;
+  return Math.abs(diff) < cone;
+}

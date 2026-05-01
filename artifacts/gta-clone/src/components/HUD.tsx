@@ -7,12 +7,12 @@ interface Props {
 }
 
 const SHOP_PROMPTS: Record<ShopKind, string> = {
-  hospital:    "Enter Hospital — $50",
-  gun_shop:    "Buy Pistol Ammo — $100",
-  ammu:        "Buy SMG — $200",
-  food:        "Eat (free) — +25 HP",
+  hospital: "Enter Hospital — $50",
+  gun_shop: "Buy Pistol Ammo — $100",
+  ammu: "Buy SMG — $200",
+  food: "Eat (free) — +25 HP",
   pay_n_spray: "Pay 'n' Spray — $100 (need car)",
-  safehouse:   "Save Spawn (free)",
+  safehouse: "Save Spawn (free)",
 };
 
 export function HUD({ state, world }: Props) {
@@ -415,10 +415,50 @@ export function HUD({ state, world }: Props) {
       <div className="hud-controls">
         <span>WASD move</span>
         <span>E enter/exit</span>
+        <span>Q weapon wheel</span>
         <span>Space/Click fire</span>
         <span>Shift sprint / handbrake</span>
         <span>P pause</span>
       </div>
+
+      {/* Weapon Wheel Overlay */}
+      {state.input.weaponWheelOpen && (
+        <div className="hud-weapon-wheel" onClick={() => (state.input.weaponWheelOpen = false)}>
+          <div className="wheel-container" onClick={(e) => e.stopPropagation()}>
+            <div className="wheel-center">
+              <div className="wheel-center-label">{state.player.weapon.toUpperCase()}</div>
+            </div>
+            {[
+              { kind: "fist", icon: "👊" },
+              { kind: "pistol", icon: "🔫" },
+              { kind: "smg", icon: "📟" },
+              { kind: "shotgun", icon: "🎒" },
+              { kind: "rifle", icon: "🏹" },
+              { kind: "sniper", icon: "🔭" },
+              { kind: "rpg", icon: "🚀" },
+              { kind: "flamethrower", icon: "🔥" },
+            ].map((w, i, arr) => {
+              const angle = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
+              const x = 250 + Math.cos(angle) * 180;
+              const y = 250 + Math.sin(angle) * 180;
+              return (
+                <div
+                  key={w.kind}
+                  className={`wheel-item ${state.player.weapon === w.kind ? "active" : ""}`}
+                  style={{ left: x, top: y }}
+                  onClick={() => {
+                    state.player.weapon = w.kind as any;
+                    state.input.weaponWheelOpen = false;
+                  }}
+                >
+                  <div className="wheel-item-icon">{w.icon}</div>
+                  <div className="wheel-item-label">{w.kind}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

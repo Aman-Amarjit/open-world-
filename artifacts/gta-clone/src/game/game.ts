@@ -30,17 +30,19 @@ import {
   spawnBlood,
   explodeVehicle,
   raiseWanted,
+  raiseWantedIfWitnessed,
+  updateWantedDecay,
   addScore,
 } from "./physics";
 import { updateHumanAI, fireBullet, bustPlayer } from "./ai";
-import { clamp, dist, distSq, lerpAngle, pick, rand } from "./utils";
+import { clamp, dist, distSq, angleTo, lerpAngle, pick, rand, newId } from "./utils";
 import { enterInterior, updateInterior } from "./interior";
 
-const TARGET_VEHICLES = 28;
-const TARGET_PEDS = 36;
+const TARGET_VEHICLES = 16;
+const TARGET_PEDS = 40;
 const TARGET_GANG = 6;
-const SPAWN_RADIUS = 700;
-const DESPAWN_RADIUS = 1100;
+const SPAWN_RADIUS = 950;
+const DESPAWN_RADIUS = 1150;
 
 export interface Game {
   world: WorldData;
@@ -82,6 +84,7 @@ export function createGame(seed = 42): Game {
       mouseY: 0,
       mouseDown: false,
       nearbyShopId: null,
+      weaponWheelOpen: false,
     },
     weather: "clear",
     timeOfDay: "day",
@@ -113,6 +116,8 @@ export function createGame(seed = 42): Game {
     missionSpawnTimer: 6,
     trafficPhase: 0,
     trafficPhaseTimer: 0,
+    lastKnownPlayerPos: null,
+    policeSearchTimer: 0,
   };
   // Scatter environment props: trees on grass, hydrants/mailboxes/lamps along sidewalks
   for (let ty = 0; ty < world.tiles.length; ty++) {
@@ -160,14 +165,25 @@ export function createGame(seed = 42): Game {
         // Fountain centerpiece on every plaza tile
         state.props.push(createProp("fountain", wx, wy));
       } else if (t.type === "sidewalk") {
-        if (Math.random() < 0.04) {
-          state.props.push(createProp("hydrant", wx + rand(-6, 6), wy + rand(-6, 6)));
-        } else if (Math.random() < 0.03) {
-          state.props.push(createProp("mailbox", wx + rand(-6, 6), wy + rand(-6, 6)));
-        } else if (Math.random() < 0.05) {
-          state.props.push(createProp("trashcan", wx + rand(-6, 6), wy + rand(-6, 6)));
-        } else if (Math.random() < 0.06) {
-          state.props.push(createProp("lamp", wx + rand(-4, 4), wy + rand(-4, 4)));
+        // Place props on sidewalks. Lamps should be systematic.
+        // We place a lamp if this sidewalk tile borders a road and is at a regular interval.
+        const bordersRoad =
+          (world.tiles[ty]?.[tx + 1]?.type === "road") ||
+          (world.tiles[ty]?.[tx - 1]?.type === "road") ||
+          (world.tiles[ty + 1]?.[tx]?.type === "road") ||
+          (world.tiles[ty - 1]?.[tx]?.type === "road");
+
+        if (bordersRoad && (tx % 8 === 0 || ty % 8 === 0)) {
+          state.props.push(createProp("lamp", wx, wy));
+        } else {
+          // Other random furniture
+          if (Math.random() < 0.04) {
+            state.props.push(createProp("hydrant", wx + rand(-6, 6), wy + rand(-6, 6)));
+          } else if (Math.random() < 0.03) {
+            state.props.push(createProp("mailbox", wx + rand(-6, 6), wy + rand(-6, 6)));
+          } else if (Math.random() < 0.05) {
+            state.props.push(createProp("trashcan", wx + rand(-6, 6), wy + rand(-6, 6)));
+          }
         }
       }
     }
@@ -268,6 +284,14 @@ export function tick(game: Game, dt: number) {
   // Particles
   updateParticles(state, dt);
 
+  // Update police search timer
+  if (state.policeSearchTimer > 0) {
+    state.policeSearchTimer -= dt;
+    if (state.policeSearchTimer <= 0) {
+      state.lastKnownPlayerPos = null;
+    }
+  }
+
   // Skid marks fade
   for (let i = state.skidMarks.length - 1; i >= 0; i--) {
     state.skidMarks[i]!.alpha -= dt * 0.05;
@@ -294,14 +318,8 @@ export function tick(game: Game, dt: number) {
   // Shop interaction (enter doors when on foot)
   updateShops(state, world, dt);
 
-  // Wanted decay
-  if (state.wantedLevel > 0 && state.combatTimer <= 0) {
-    state.wantedDecayTimer -= dt;
-    if (state.wantedDecayTimer <= 0) {
-      state.wantedLevel = Math.max(0, state.wantedLevel - 1);
-      state.wantedDecayTimer = 30;
-    }
-  }
+  // Wanted decay with contextual bonuses
+  updateWantedDecay(state, dt, world);
   if (state.combatTimer > 0) state.combatTimer -= dt;
 
   // Combo timer
@@ -613,24 +631,52 @@ function applyPlayerInput(state: GameState, dt: number) {
 }
 
 function tryFire(state: GameState, p: Human) {
-  // Bare fists branch into a melee swing instead of a gunshot.
   if (p.weapon === "fist") {
     tryPunch(state, p);
     return;
   }
   if (p.fireTimer > 0) return;
-  if (p.ammo <= 0) return;
-  p.ammo -= 1;
-  fireBullet(state, p, p.angle, 25);
+  if (p.ammo <= 0 && !p.isPlayer) {
+    tryPunch(state, p);
+    return;
+  }
+
+  // Multi-shot for shotgun
+  if (p.weapon === "shotgun") {
+    for (let i = 0; i < 6; i++) {
+      fireBullet(state, p, p.angle + rand(-0.2, 0.2), 15);
+    }
+  } else {
+    fireBullet(state, p, p.angle, 25);
+  }
+
   audioEngine.playGunshot();
-  // Slight cooldown by weapon
-  p.fireTimer =
-    p.weapon === "smg" ? 0.07 : p.weapon === "shotgun" ? 0.7 : 0.18;
-  // Recoil: shotgun is heavy, others almost imperceptible
-  const recoil = p.weapon === "shotgun" ? 3 : p.weapon === "smg" ? 0.4 : 0.8;
-  state.camera.shake = Math.max(state.camera.shake, recoil);
-  // If shooting raises wanted
-  raiseWanted(state, 1);
+
+  // Cooldowns
+  const cooldowns: Record<string, number> = {
+    pistol: 0.25,
+    smg: 0.08,
+    shotgun: 0.8,
+    rifle: 0.15,
+    sniper: 1.3,
+    rpg: 2.2,
+    flamethrower: 0.05,
+  };
+  p.fireTimer = cooldowns[p.weapon] || 0.2;
+
+  // Recoil / Camera Shake
+  const shakes: Record<string, number> = {
+    pistol: 0.8,
+    smg: 0.5,
+    shotgun: 4,
+    rifle: 1.2,
+    sniper: 5,
+    rpg: 8,
+    flamethrower: 0.2,
+  };
+  state.camera.shake = Math.max(state.camera.shake, shakes[p.weapon] || 1);
+
+  raiseWantedIfWitnessed(state, 1);
   state.combatTimer = Math.max(state.combatTimer, 4);
 }
 
@@ -730,12 +776,12 @@ function applyPunchToHuman(state: GameState, attacker: Human, victim: Human) {
     victim.aiState = "attack";
     state.combatTimer = Math.max(state.combatTimer, 6);
   } else {
-    // Pedestrian: 35% chance they fight back, otherwise they panic and flee.
+    // Pedestrian: chance they fight back depends on bravery, otherwise they panic and flee.
     // Either way it's a witnessed assault — a small wanted bump, occasional
     // witness reports the player to the police.
-    raiseWanted(state, 1);
+    raiseWantedIfWitnessed(state, 1);
     state.combatTimer = Math.max(state.combatTimer, 4);
-    if (Math.random() < 0.35) {
+    if (Math.random() < victim.bravery) {
       victim.aiState = "fight";
       victim.aiTimer = 6;
       victim.aiTargetX = attacker.x;
@@ -924,29 +970,66 @@ function updateBullets(state: GameState, dt: number, world: WorldData) {
         const dy = v.y - b.y;
         if (dx * dx + dy * dy < (v.length / 2) * (v.length / 2)) {
           v.hp -= b.damage * 0.6;
+          hit = true;
           // sparks
           state.particles.push({
             x: b.x,
             y: b.y,
-            vx: -b.vx * 0.1 + rand(-30, 30),
-            vy: -b.vy * 0.1 + rand(-30, 30),
+            vx: -b.vx * 0.2 + rand(-30, 30),
+            vy: -b.vy * 0.2 + rand(-30, 30),
             life: 0.2,
             maxLife: 0.2,
-            size: 1.2,
+            size: 1.5,
             kind: "spark",
-            color: "#ffd040",
+            color: "#fff080",
             rotation: 0,
             rotationSpeed: 0,
           });
-          hit = true;
           break;
         }
       }
     }
-    if (hit || b.life <= 0) {
+    if (hit) {
+      if ((b as any).kind === "rocket") {
+        explodeAt(state, b.x, b.y, 100);
+      }
       state.bullets.splice(i, 1);
     }
   }
+}
+
+function explodeAt(state: GameState, x: number, y: number, r: number) {
+  // Damage humans
+  for (const h of state.humans) {
+    const d = dist(x, y, h.x, h.y);
+    if (d < r) {
+      const f = 1 - d / r;
+      h.hp -= 150 * f;
+      h.vx += (h.x - x) * 5 * f;
+      h.vy += (h.y - y) * 5 * f;
+    }
+  }
+  // Damage vehicles
+  for (const v of state.vehicles) {
+    const d = dist(x, y, v.x, v.y);
+    if (d < r + 40) {
+      const f = 1 - d / (r + 40);
+      v.hp -= 120 * f;
+      v.vx += (v.x - x) * 3 * f;
+      v.vy += (v.y - y) * 3 * f;
+    }
+  }
+  // Particles
+  for (let i = 0; i < 20; i++) {
+    const a = Math.random() * Math.PI * 2;
+    const sp = rand(100, 300);
+    state.particles.push({
+      x, y, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+      life: 0.5 + Math.random() * 0.5, maxLife: 1, size: 6 + Math.random() * 4,
+      kind: "fire", color: "#ff8020", rotation: 0, rotationSpeed: 0
+    });
+  }
+  state.camera.shake = Math.max(state.camera.shake, 12);
 }
 
 // Shop pricing/effects table.
@@ -954,12 +1037,12 @@ const SHOP_INFO: Record<
   import("./world").ShopKind,
   { label: string; cost: number; cooldown: number }
 > = {
-  hospital:    { label: "Heal",            cost: 50,  cooldown: 8 },
-  gun_shop:    { label: "Buy ammo+pistol", cost: 100, cooldown: 4 },
-  pay_n_spray: { label: "Respray",         cost: 100, cooldown: 6 },
-  food:        { label: "Eat (+25 HP)",    cost: 0,   cooldown: 6 },
-  safehouse:   { label: "Save spawn",      cost: 0,   cooldown: 5 },
-  ammu:        { label: "Buy SMG ammo",    cost: 200, cooldown: 4 },
+  hospital: { label: "Heal", cost: 50, cooldown: 8 },
+  gun_shop: { label: "Buy ammo+pistol", cost: 100, cooldown: 4 },
+  pay_n_spray: { label: "Respray", cost: 100, cooldown: 6 },
+  food: { label: "Eat (+25 HP)", cost: 0, cooldown: 6 },
+  safehouse: { label: "Save spawn", cost: 0, cooldown: 5 },
+  ammu: { label: "Buy SMG ammo", cost: 200, cooldown: 4 },
 };
 
 let shopCooldownTimer = 0;
@@ -1043,105 +1126,138 @@ function updateAnimals(state: GameState, dt: number, world: WorldData) {
   const p = state.player;
   for (const a of state.animals) {
     a.walkPhase += dt * (a.kind === "pigeon" ? 12 : a.kind === "cat" ? 9 : 7);
-    a.stateTimer -= dt;
+    if (a.stateTimer > 0) a.stateTimer -= dt;
+
     if (a.hp <= 0) {
-      // dead — let stateTimer count up so despawn can clean up
       a.state = "downed";
       a.vx *= Math.pow(0.001, dt);
       a.vy *= Math.pow(0.001, dt);
       a.x += a.vx * dt;
       a.y += a.vy * dt;
-      a.stateTimer += dt * 2; // reuse for despawn timer
+      a.stateTimer += dt;
       continue;
     }
+
     // SCARE check: gunshots, vehicles, player nearby
     const dPlayer = dist(a.x, a.y, p.x, p.y);
     let scared = false;
-    let sx = a.x;
-    let sy = a.y;
-    if (dPlayer < (a.kind === "pigeon" ? 70 : a.kind === "cat" ? 60 : 80)) {
-      scared = true;
-      sx = p.x;
-      sy = p.y;
+    let sx = a.x, sy = a.y;
+
+    const scareRange = a.kind === "deer" ? 180 : a.kind === "pigeon" ? 75 : 60;
+    if (dPlayer < scareRange) {
+      scared = true; sx = p.x; sy = p.y;
     }
-    // Vehicles within range
-    for (const v of state.vehicles) {
-      const dv = dist(a.x, a.y, v.x, v.y);
-      const sp = Math.hypot(v.vx, v.vy);
-      if (dv < 90 && sp > 50) {
-        scared = true;
-        sx = v.x;
-        sy = v.y;
-        break;
+    if (!scared) {
+      for (const v of state.vehicles) {
+        if (distSq(a.x, a.y, v.x, v.y) < 90 * 90 && Math.hypot(v.vx, v.vy) > 40) {
+          scared = true; sx = v.x; sy = v.y; break;
+        }
       }
     }
-    // Bullets snap closeby
-    for (const b of state.bullets) {
-      if (dist(a.x, a.y, b.x, b.y) < 80) {
-        scared = true;
-        sx = b.x;
-        sy = b.y;
-        break;
+    if (!scared) {
+      for (const b of state.bullets) {
+        if (distSq(a.x, a.y, b.x, b.y) < 70 * 70) {
+          scared = true; sx = b.x; sy = b.y; break;
+        }
       }
     }
+
     if (scared) {
-      a.state = "flee";
-      a.stateTimer = 2.5;
-      a.panicFromX = sx;
-      a.panicFromY = sy;
-      // Pigeons take flight when scared
-      if (a.kind === "pigeon" && a.flyZ < 0.05) {
-        a.flyTimer = 3;
-        // emit feather particles
-        for (let f = 0; f < 3; f++) {
-          state.particles.push({
-            x: a.x,
-            y: a.y,
-            vx: rand(-30, 30),
-            vy: rand(-30, 30),
-            life: 1.5,
-            maxLife: 1.5,
-            size: 1.5,
-            kind: "feather",
-            color: "#cfd6dd",
-            rotation: rand(0, Math.PI * 2),
-            rotationSpeed: rand(-3, 3),
+      // Aggressive animals might attack instead of flee
+      if ((a.kind === "bear" || a.kind === "wolf" || a.kind === "boar") && dPlayer < 120 && a.hp > 0) {
+        if (a.state !== "attack") {
+          a.state = "attack";
+          a.stateTimer = 10;
+        }
+      } else {
+        a.state = "flee";
+        a.stateTimer = a.kind === "deer" ? rand(4, 7) : rand(2, 4);
+        a.panicFromX = sx; a.panicFromY = sy;
+        if (a.kind === "pigeon" && a.flyZ < 0.1) {
+          a.flyTimer = rand(3, 5);
+          for (let i = 0; i < 3; i++) state.particles.push({
+            x: a.x, y: a.y, vx: rand(-40, 40), vy: rand(-40, 40), life: 1, maxLife: 1, size: 1.2, kind: "feather", color: "#ddd", rotation: rand(0, 7), rotationSpeed: rand(-2, 2)
           });
         }
       }
     }
-    if (a.state === "flee") {
-      const dx = a.x - a.panicFromX;
-      const dy = a.y - a.panicFromY;
-      const d = Math.hypot(dx, dy) || 1;
-      const speed = a.speed * 1.6;
-      a.vx = (dx / d) * speed;
-      a.vy = (dy / d) * speed;
-      a.angle = Math.atan2(a.vy, a.vx);
+
+    // INTERACTION Logic (Dogs chase cats/pigeons, Wolves chase deer)
+    if (a.state === "wander" && Math.random() < 0.02) {
+      if (a.kind === "dog") {
+        const target = state.animals.find(o => (o.kind === "cat" || o.kind === "pigeon") && distSq(a.x, a.y, o.x, o.y) < 150 * 150);
+        if (target) { a.state = "chase"; a.targetId = target.id; a.stateTimer = 4; }
+      } else if (a.kind === "wolf") {
+        const target = state.animals.find(o => o.kind === "deer" && distSq(a.x, a.y, o.x, o.y) < 250 * 250);
+        if (target) { a.state = "chase"; a.targetId = target.id; a.stateTimer = 8; }
+      }
+    }
+
+    if (a.state === "chase" || a.state === "attack") {
+      let targetPos = { x: p.x, y: p.y };
+      let isTargetingPlayer = true;
+      if (a.state === "chase") {
+        const tgt = state.animals.find(o => o.id === a.targetId);
+        if (tgt) { targetPos = { x: tgt.x, y: tgt.y }; isTargetingPlayer = false; }
+        else { a.state = "wander"; }
+      }
+
+      if (a.state !== "wander") {
+        const angle = angleTo(a.x, a.y, targetPos.x, targetPos.y);
+        const chaseSpeedMul = a.kind === "bear" ? 0.8 : a.kind === "boar" ? 1.5 : 1.3;
+        a.vx = Math.cos(angle) * a.speed * chaseSpeedMul;
+        a.vy = Math.sin(angle) * a.speed * chaseSpeedMul;
+        a.angle = angle;
+
+        if (isTargetingPlayer && dPlayer < 20) {
+          // Bite player
+          p.hp -= (a.kind === "bear" ? 0.8 : a.kind === "wolf" ? 0.4 : 0.3);
+          state.damageFlash = 0.2;
+          if (Math.random() < 0.1) spawnBlood(state, p.x, p.y);
+        }
+
+        if (a.stateTimer <= 0) a.state = "wander";
+      }
+    } else if (a.state === "bark") {
+      a.vx *= 0.8; a.vy *= 0.8;
+      if (a.stateTimer <= 0) a.state = "chase";
+    } else if (a.state === "flee") {
+      const angle = angleTo(a.panicFromX, a.panicFromY, a.x, a.y);
+      a.vx = Math.cos(angle) * a.speed * 1.5;
+      a.vy = Math.sin(angle) * a.speed * 1.5;
+      a.angle = angle;
+      if (a.stateTimer <= 0) a.state = "wander";
+    } else if (a.state === "sit") {
+      a.vx *= 0.5; a.vy *= 0.5;
+      if (a.stateTimer <= 0) a.state = "wander";
+    } else if (a.state === "sniff") {
+      a.vx *= 0.2; a.vy *= 0.2;
+      a.angle += Math.sin(a.walkPhase * 2) * 0.1;
       if (a.stateTimer <= 0) a.state = "wander";
     } else {
-      // Wander toward a fresh nearby spot
+      // WANDER
       if (a.stateTimer <= 0) {
-        const r = a.kind === "cat" ? 60 : 90;
-        const target = {
-          x: a.homeX + rand(-r, r),
-          y: a.homeY + rand(-r, r),
-        };
-        a.panicFromX = target.x;
-        a.panicFromY = target.y;
-        a.stateTimer = rand(2, 5);
+        const r = Math.random();
+        if (r < 0.1 && a.kind === "cat") { a.state = "sit"; a.stateTimer = rand(2, 6); }
+        else if (r < 0.15 && a.kind === "dog") { a.state = "sniff"; a.stateTimer = rand(1, 3); }
+        else if (r < 0.05 && a.kind === "cow") { a.state = "sit"; a.stateTimer = rand(5, 10); }
+        else {
+          const range = a.kind === "cow" ? 30 : a.kind === "cat" ? 50 : 100;
+          a.panicFromX = a.homeX + rand(-range, range);
+          a.panicFromY = a.homeY + rand(-range, range);
+          a.stateTimer = rand(2, 5);
+        }
       }
-      const dx = a.panicFromX - a.x;
-      const dy = a.panicFromY - a.y;
+      const dx = a.panicFromX - a.x, dy = a.panicFromY - a.y;
       const d = Math.hypot(dx, dy) || 1;
-      // pigeons hop in tiny bursts
-      const sp =
-        a.kind === "pigeon"
-          ? a.speed * 0.5 * (Math.sin(a.walkPhase) > 0.6 ? 1 : 0)
-          : a.speed * 0.45;
-      a.vx = (dx / d) * sp;
-      a.vy = (dy / d) * sp;
-      if (sp > 1) a.angle = Math.atan2(a.vy, a.vx);
+      const moveSp = a.kind === "pigeon" ? a.speed * 0.4 * (Math.sin(a.walkPhase) > 0.5 ? 1 : 0) : a.kind === "cow" ? a.speed * 0.2 : a.speed * 0.4;
+      a.vx = (dx / d) * moveSp;
+      a.vy = (dy / d) * moveSp;
+      if (moveSp > 1) a.angle = Math.atan2(a.vy, a.vx);
+
+      if (a.kind === "pigeon" && Math.random() < 0.002 && a.flyZ < 0.1) {
+        a.flyTimer = rand(2, 4);
+      }
     }
     // Pigeon flight altitude visualization
     if (a.flyTimer > 0) {
@@ -1409,11 +1525,23 @@ function updateCamera(state: GameState, dt: number) {
 
 function manageSpawns(state: GameState, world: WorldData) {
   const p = state.player;
-  // Despawn far away
+  // ---- TIME-BASED DENSITY ----
+  const hour = (state.worldTime / 60) % 24;
+  // Rush hour: 8am and 5pm. Night: 2am-5am.
+  const rushHour = Math.exp(-Math.pow(hour - 8, 2) / 2) + Math.exp(-Math.pow(hour - 17, 2) / 2);
+  const nightSlump = hour > 1 && hour < 5 ? 0.3 : 1.0;
+  const densityMul = (1.0 + rushHour * 0.8) * nightSlump;
+
+  const targetVehicles = Math.floor(TARGET_VEHICLES * densityMul);
+  const targetPeds = Math.floor(TARGET_PEDS * densityMul);
+
+  // Despawn far away or blocked
   for (let i = state.vehicles.length - 1; i >= 0; i--) {
     const v = state.vehicles[i]!;
     if (v.driver?.isPlayer) continue;
-    if (dist(v.x, v.y, p.x, p.y) > DESPAWN_RADIUS) {
+    const d = dist(v.x, v.y, p.x, p.y);
+    const shouldDespawn = d > DESPAWN_RADIUS || (v.blockedTimer > 12 && d > 300);
+    if (shouldDespawn) {
       // Also remove driver
       if (v.driver) {
         const di = state.humans.indexOf(v.driver);
@@ -1434,13 +1562,24 @@ function manageSpawns(state: GameState, world: WorldData) {
   // Spawn vehicles
   let vCount = state.vehicles.length;
   let tries = 0;
-  while (vCount < TARGET_VEHICLES && tries < 8) {
+  while (vCount < targetVehicles && tries < 10) {
     tries++;
     const node = pick(world.roadGraph);
     const dx = node.x - p.x;
     const dy = node.y - p.y;
     const d = Math.hypot(dx, dy);
     if (d < 400 || d > SPAWN_RADIUS) continue;
+
+    // SPAWN SAFETY: Check if another car is already here
+    let tooClose = false;
+    for (const o of state.vehicles) {
+      if (distSq(node.x, node.y, o.x, o.y) < 100 * 100) {
+        tooClose = true;
+        break;
+      }
+    }
+    if (tooClose) continue;
+
     const angle = Math.random() < 0.5 ? 0 : Math.PI / 2;
     const kind =
       state.wantedLevel >= 2 && Math.random() < 0.35
@@ -1460,17 +1599,25 @@ function manageSpawns(state: GameState, world: WorldData) {
   // Spawn peds
   let pedCount = state.humans.filter((h) => h.kind === "pedestrian" && !h.inVehicle).length;
   tries = 0;
-  while (pedCount < TARGET_PEDS && tries < 10) {
+  while (pedCount < targetPeds && tries < 10) {
     tries++;
     const angle = Math.random() * Math.PI * 2;
     const r = rand(300, SPAWN_RADIUS);
     const x = p.x + Math.cos(angle) * r;
     const y = p.y + Math.sin(angle) * r;
     const road = findNearestRoad(world, x, y);
-    // step off-road onto sidewalk
-    const ped = createHuman("pedestrian", road.x + rand(-24, 24), road.y + rand(-24, 24));
-    state.humans.push(ped);
-    pedCount++;
+
+    // Group spawning (20% chance for a pair)
+    const isGroup = Math.random() < 0.2;
+    const groupSize = isGroup ? 2 : 1;
+    const groupId = isGroup ? newId() : undefined;
+
+    for (let i = 0; i < groupSize; i++) {
+      const ped = createHuman("pedestrian", road.x + rand(-24, 24), road.y + rand(-24, 24));
+      ped.groupId = groupId;
+      state.humans.push(ped);
+      pedCount++;
+    }
   }
   // Spawn gang occasionally
   let gangCount = state.humans.filter((h) => h.kind === "gang").length;
@@ -1507,31 +1654,37 @@ function manageSpawns(state: GameState, world: WorldData) {
   // ANIMALS — keep a soft target around player
   for (let i = state.animals.length - 1; i >= 0; i--) {
     const a = state.animals[i]!;
-    if (dist(a.x, a.y, p.x, p.y) > DESPAWN_RADIUS || a.hp <= 0 && a.stateTimer > 4) {
+    if (dist(a.x, a.y, p.x, p.y) > DESPAWN_RADIUS || (a.hp <= 0 && a.stateTimer > 10)) {
       state.animals.splice(i, 1);
     }
   }
-  const TARGET_ANIMALS = 14;
-  if (state.animals.length < TARGET_ANIMALS && Math.random() < 0.04) {
+  const TARGET_ANIMALS = 24; // Increased for larger world
+  if (state.animals.length < TARGET_ANIMALS && Math.random() < 0.08) {
     const angle = Math.random() * Math.PI * 2;
-    const r = rand(300, SPAWN_RADIUS);
+    const r = rand(400, SPAWN_RADIUS);
     const x = p.x + Math.cos(angle) * r;
     const y = p.y + Math.sin(angle) * r;
-    // Prefer non-road tiles for spawn
     const tx = Math.floor(x / TILE);
     const ty = Math.floor(y / TILE);
     const t = world.tiles[ty]?.[tx];
-    if (t && (t.type === "grass" || t.type === "sidewalk")) {
-      const roll = Math.random();
-      const kind: "dog" | "cat" | "pigeon" =
-        roll < 0.45 ? "pigeon" : roll < 0.8 ? "dog" : "cat";
-      // Pigeons spawn in small clusters
+
+    if (t && (t.type === "grass" || t.type === "sand" || t.type === "sidewalk")) {
+      let kind: import("./types").AnimalKind = "pigeon";
+      if (t.district === "forest") {
+        const roll = Math.random();
+        kind = roll < 0.3 ? "deer" : roll < 0.5 ? "wolf" : roll < 0.65 ? "boar" : roll < 0.8 ? "bear" : "pigeon";
+      } else if (t.district === "park" || t.district === "residential") {
+        const roll = Math.random();
+        kind = roll < 0.4 ? "dog" : roll < 0.7 ? "cat" : roll < 0.85 ? "cow" : "pigeon";
+      } else {
+        const roll = Math.random();
+        kind = roll < 0.4 ? "pigeon" : roll < 0.7 ? "dog" : "cat";
+      }
+
       if (kind === "pigeon") {
         const n = 2 + Math.floor(Math.random() * 4);
         for (let j = 0; j < n; j++) {
-          state.animals.push(
-            createAnimal(kind, x + rand(-18, 18), y + rand(-18, 18)),
-          );
+          state.animals.push(createAnimal(kind, x + rand(-18, 18), y + rand(-18, 18)));
         }
       } else {
         state.animals.push(createAnimal(kind, x, y));

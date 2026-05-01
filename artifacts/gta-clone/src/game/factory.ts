@@ -131,6 +131,10 @@ export function createVehicle(
     pitTimer: 0,
     stuckTimer: 0,
     reverseTimer: 0,
+    yieldingTimer: 0,
+    blockedTimer: 0,
+    drivingStyle: Math.random() < 0.2 ? "aggressive" : Math.random() < 0.3 ? "cautious" : "normal",
+    visualVariant: Math.random(),
   };
 }
 
@@ -229,6 +233,11 @@ export function createHuman(
     hitCooldown: 0,
     stamina: 1,
     staminaLocked: false,
+    behavior: kind === "pedestrian" ? (Math.random() < 0.15 ? "jogger" : Math.random() < 0.15 ? "slow" : "normal") : "normal",
+    chatTimer: 0,
+    bravery: kind === "pedestrian" ? rand(0, 0.6) : rand(0.5, 1.0),
+    groupId: -1,
+    witnessCrimePos: undefined,
   };
 }
 
@@ -236,31 +245,36 @@ const DOG_COLORS = ["#6b4a2b", "#3a2418", "#c9a06b", "#222", "#dcb98a", "#7a5b3a
 const CAT_COLORS = ["#2b2b2b", "#cc9b58", "#dadada", "#56402b", "#e7d4a3"];
 
 export function createAnimal(
-  kind: "dog" | "cat" | "pigeon",
+  kind: import("./types").AnimalKind,
   x: number,
   y: number,
 ): Animal {
-  const baseHp = kind === "dog" ? 30 : kind === "cat" ? 18 : 6;
-  const baseSpeed = kind === "dog" ? 110 : kind === "cat" ? 140 : 70;
+  const specs: Record<import("./types").AnimalKind, { hp: number; speed: number; colors: string[] }> = {
+    dog: { hp: 30, speed: 110, colors: ["#6b4a2b", "#3a2418", "#c9a06b", "#222", "#dcb98a", "#7a5b3a"] },
+    cat: { hp: 18, speed: 140, colors: ["#2b2b2b", "#cc9b58", "#dadada", "#56402b", "#e7d4a3"] },
+    pigeon: { hp: 6, speed: 70, colors: ["#7e8a99"] },
+    deer: { hp: 45, speed: 160, colors: ["#8b5e3c", "#a0785a"] },
+    bear: { hp: 200, speed: 120, colors: ["#3d2b1f", "#1a130f"] },
+    wolf: { hp: 60, speed: 180, colors: ["#7f8c8d", "#2c3e50"] },
+    cow: { hp: 120, speed: 40, colors: ["#fdfdfd"] },
+    boar: { hp: 80, speed: 150, colors: ["#4a3a2a", "#2a1a0a"] },
+  };
+  const spec = specs[kind] || specs.dog;
   return {
     id: newId(),
     kind,
+    breed: Math.floor(Math.random() * 4),
     x,
     y,
     vx: 0,
     vy: 0,
     angle: rand(0, Math.PI * 2),
-    speed: baseSpeed,
-    hp: baseHp,
+    speed: spec.speed,
+    hp: spec.hp,
     state: "wander",
     stateTimer: rand(0.5, 3),
     walkPhase: rand(0, Math.PI * 2),
-    furColor:
-      kind === "dog"
-        ? pick(DOG_COLORS)
-        : kind === "cat"
-          ? pick(CAT_COLORS)
-          : "#7e8a99",
+    furColor: pick(spec.colors),
     flyZ: 0,
     flyTimer: 0,
     panicFromX: x,
@@ -292,16 +306,16 @@ export function createProp(
 ): Prop {
   const solidRadius =
     kind === "tree" || kind === "oak" ? 14
-    : kind === "pine" ? 12
-    : kind === "palm" ? 10
-    : kind === "cactus" ? 7
-    : kind === "fountain" ? 18
-    : kind === "lamp" ? 6
-    : kind === "hydrant" ? 7
-    : kind === "mailbox" ? 9
-    : kind === "bench" ? 12
-    : kind === "trashcan" ? 9
-    : 0;
+      : kind === "pine" ? 12
+        : kind === "palm" ? 10
+          : kind === "cactus" ? 7
+            : kind === "fountain" ? 18
+              : kind === "lamp" ? 6
+                : kind === "hydrant" ? 7
+                  : kind === "mailbox" ? 9
+                    : kind === "bench" ? 12
+                      : kind === "trashcan" ? 9
+                        : 0;
   return { kind, x, y, variant, solidRadius };
 }
 
