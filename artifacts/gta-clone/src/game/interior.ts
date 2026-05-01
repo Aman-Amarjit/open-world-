@@ -622,6 +622,10 @@ export function updateInterior(state: GameState, dt: number) {
           p.ammo += item.givesAmmo ?? 0;
           msg = `AMMO +${item.givesAmmo}`;
           ir.flashColor = "#ffdd80";
+          // Auto-equip if on fists and they have guns
+          if (p.weapon === "fist" && p.ownedGuns.length > 0) {
+            p.weapon = p.ownedGuns[0];
+          }
         }
         ir.bannerMsg = msg;
         ir.bannerTimer = 1.6;

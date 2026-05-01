@@ -48,6 +48,22 @@ export function setupInput(state: GameState, canvas: HTMLCanvasElement) {
       case "KeyQ":
         inp.weaponWheelOpen = !inp.weaponWheelOpen;
         break;
+      case "Digit1":
+      case "Digit2":
+      case "Digit3":
+      case "Digit4":
+      case "Digit5":
+      case "Digit6":
+      case "Digit7":
+      case "Digit8":
+      case "Digit9":
+        {
+          const num = parseInt(e.code.replace("Digit", ""));
+          // Store the requested weapon index (+1 because 1=fist/first gun)
+          // We'll handle this in game.ts
+          (inp as any).requestedWeaponSlot = num;
+        }
+        break;
     }
   };
   const onKeyUp = (e: KeyboardEvent) => {

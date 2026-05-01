@@ -240,26 +240,41 @@ export function drawCar(
   ctx.ellipse(-halfL - 0.4, halfW - 4, 0.35, 0.3, 0, 0, Math.PI * 2);
   ctx.fill();
 
-  // Headlights (front) — brighter at night, with a hot core
-  if (isNight) {
-    ctx.save();
-    ctx.globalCompositeOperation = "lighter";
-    ctx.fillStyle = "#fff8d0";
+  // Headlights — modern LED-strip style, flush with front bumper
+  const hlYs = [-halfW + 3, halfW - 3];
+  for (const hy of hlYs) {
+    // Housing shell (dark bezel)
+    ctx.fillStyle = "#181818";
     ctx.beginPath();
-    ctx.ellipse(halfL, -halfW + 3, 1.8, 1.5, 0, 0, Math.PI * 2);
+    ctx.roundRect(halfL - 3, hy - 1.3, 3.2, 2.6, 0.5);
     ctx.fill();
+    // Reflector chrome backing
+    ctx.fillStyle = "#c0c4cc";
     ctx.beginPath();
-    ctx.ellipse(halfL, halfW - 3, 1.8, 1.5, 0, 0, Math.PI * 2);
+    ctx.roundRect(halfL - 2.7, hy - 1.0, 2.6, 2.0, 0.3);
     ctx.fill();
-    ctx.restore();
-  } else {
-    ctx.fillStyle = "#fff7c0";
+    // DRL strip (thin bright bar)
+    if (isNight) {
+      ctx.save();
+      ctx.globalCompositeOperation = "lighter";
+      ctx.fillStyle = "#ffe8a0";
+      ctx.beginPath();
+      ctx.roundRect(halfL - 2.4, hy - 0.55, 2.2, 1.1, 0.25);
+      ctx.fill();
+      ctx.restore();
+    } else {
+      // Day: subtle warm white strip
+      ctx.fillStyle = "#fff0c0";
+      ctx.beginPath();
+      ctx.roundRect(halfL - 2.4, hy - 0.45, 2.2, 0.9, 0.2);
+      ctx.fill();
+    }
+    // Outer chrome trim edge
+    ctx.strokeStyle = "rgba(200,210,220,0.6)";
+    ctx.lineWidth = 0.4;
     ctx.beginPath();
-    ctx.ellipse(halfL, -halfW + 3, 1.2, 1, 0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.beginPath();
-    ctx.ellipse(halfL, halfW - 3, 1.2, 1, 0, 0, Math.PI * 2);
-    ctx.fill();
+    ctx.roundRect(halfL - 2.9, hy - 1.1, 2.8, 2.2, 0.4);
+    ctx.stroke();
   }
 
   // Taillights — always glow at night (running lights)

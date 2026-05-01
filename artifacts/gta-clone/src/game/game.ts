@@ -595,6 +595,44 @@ function findSafeRespawn(
 function applyPlayerInput(state: GameState, dt: number) {
   const p = state.player;
   const inp = state.input;
+
+  // ---- WEAPON SWITCHING ----
+  // Q cycles through owned weapons + fists. 
+  // Number keys 1-9 select specific weapons if owned.
+  if (inp.weaponWheelOpen || (inp as any).requestedWeaponSlot !== undefined) {
+    const slot = (inp as any).requestedWeaponSlot;
+    (inp as any).requestedWeaponSlot = undefined; // consume
+
+    if (inp.weaponWheelOpen) {
+      inp.weaponWheelOpen = false; // consume the toggle
+      // Cycle: fist -> owned[0] -> owned[1] -> ... -> owned[n-1] -> fist
+      const pool: import("./types").WeaponKind[] = ["fist", ...p.ownedGuns];
+      const currentIdx = pool.indexOf(p.weapon);
+      const nextIdx = (currentIdx + 1) % pool.length;
+      p.weapon = pool[nextIdx];
+    } else if (slot !== undefined) {
+      // 1 = fist, 2 = first owned gun, etc.
+      if (slot === 1) {
+        p.weapon = "fist";
+      } else {
+        const gunIdx = slot - 2;
+        if (gunIdx >= 0 && gunIdx < p.ownedGuns.length) {
+          p.weapon = p.ownedGuns[gunIdx];
+        } else {
+          // If they don't own it, maybe flash a message or do nothing
+          state.notifications.push({ text: "WEAPON NOT OWNED", life: 1, color: "#ff5050" });
+        }
+      }
+    }
+
+    state.notifications.push({
+      text: `WEAPON: ${p.weapon.toUpperCase()}`,
+      life: 1.5,
+      color: "#ffffff",
+    });
+    audioEngine.playPickup(); // Reuse pickup sound for switching feedback
+  }
+
   if (p.inVehicle) {
     const v = p.inVehicle;
     const turn = (inp.right ? 1 : 0) - (inp.left ? 1 : 0);
@@ -1005,6 +1043,7 @@ function updateBullets(state: GameState, dt: number, world: WorldData) {
       state.bullets.splice(i, 1);
       continue;
     }
+    const owner = state.humans.find(h => h.id === b.owner);
     // hit humans
     for (const h of state.humans) {
       if (h.id === b.owner) continue;
@@ -1045,6 +1084,7 @@ function updateBullets(state: GameState, dt: number, world: WorldData) {
     if (!hit) {
       // hit vehicles
       for (const v of state.vehicles) {
+        if (owner && v === owner.inVehicle) continue; // Don't hit own vehicle
         const dx = v.x - b.x;
         const dy = v.y - b.y;
         if (dx * dx + dy * dy < (v.length / 2) * (v.length / 2)) {
