@@ -61,16 +61,15 @@ export function renderWorld(rc: RenderContext) {
         case "grass": {
           const isForest = t.district === "forest";
           const isPark   = t.district === "park";
-          // Forest gets a deeper, richer green base; park gets a brighter turf
-          const baseHex = isForest ? "#3a5a1e" : isPark ? "#4a7028" : "#4a6e2a";
+          const baseHex = isForest ? "#2e4d18" : isPark ? "#4a7028" : "#4a6e2a";
           const base = timeFilter(state.timeOfDay, baseHex);
           ctx.fillStyle = base;
           ctx.fillRect(px, py, TILE, TILE);
 
-          // Two-tone ground speckle (stable per-tile hash)
-          const dark = shadeHex(base, -16);
-          const lite = shadeHex(base, 12);
-          const speckleCount = isForest ? 18 : 22;
+          // Two-tone ground speckle
+          const dark = shadeHex(base, -18);
+          const lite = shadeHex(base, 14);
+          const speckleCount = isForest ? 24 : 22;
           for (let i = 0; i < speckleCount; i++) {
             const hh = ((h1 >> (i % 7)) ^ (h2 * (i + 1))) >>> 0;
             const sx = px + (hh % TILE);
@@ -79,80 +78,196 @@ export function renderWorld(rc: RenderContext) {
             ctx.fillRect(sx, sy, 1, 1);
           }
 
-          // Lush variant gets richer undergrowth patches
+          // Lush undergrowth patches
           if (t.variant! >= 4) {
-            for (let i = 0; i < 6; i++) {
+            for (let i = 0; i < 8; i++) {
               const hh = ((h3 * (i + 3)) ^ h1) >>> 0;
               const sx = px + (hh % (TILE - 3));
               const sy = py + ((hh >> 4) % (TILE - 3));
-              ctx.fillStyle = shadeHex(base, -26);
+              ctx.fillStyle = shadeHex(base, -28);
               ctx.fillRect(sx, sy, 2, 2);
             }
           }
 
-          // TREES — drawn on forest (55% probability) and park (28%) tiles
-          const treeChance = isForest ? 0.55 : isPark ? 0.28 : 0;
-          if (treeChance > 0 && (h2 % 1000) / 1000 < treeChance) {
-            // Deterministic tree position within tile (biased slightly off-center)
-            const treeCX = px + 14 + (h1 % (TILE - 28));
-            const treeCY = py + 14 + (h3 % (TILE - 28));
-
-            // Canopy radius varies by tree "age"
-            const ageSeed = (h1 ^ h3) % 100;
-            const canopyR = isForest
-              ? 14 + (ageSeed % 9)     // forest: bigger trees 14-22px
-              : 10 + (ageSeed % 7);    // park: smaller ornamental trees
-
-            // Shadow (elongated ellipse, NE direction)
-            ctx.fillStyle = "rgba(0,0,0,0.22)";
-            ctx.beginPath();
-            ctx.ellipse(treeCX + 4, treeCY + 6, canopyR * 0.85, canopyR * 0.45, 0.3, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Trunk
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#4a3020");
-            ctx.beginPath();
-            ctx.arc(treeCX, treeCY + canopyR * 0.25, 3, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Multi-layered canopy for depth
-            const canopyBase = isForest
-              ? timeFilter(state.timeOfDay, "#1e4a10")
-              : timeFilter(state.timeOfDay, "#2a5a18");
-
-            // Outer canopy (darkest — understorey shadow)
-            ctx.fillStyle = shadeHex(canopyBase, -12);
-            ctx.beginPath();
-            ctx.arc(treeCX, treeCY, canopyR, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Mid canopy — main colour
-            ctx.fillStyle = canopyBase;
-            ctx.beginPath();
-            ctx.arc(treeCX - 2, treeCY - 1, canopyR * 0.78, 0, Math.PI * 2);
-            ctx.fill();
-
-            // Secondary cluster offset
-            if (ageSeed % 3 !== 0) {
-              ctx.fillStyle = shadeHex(canopyBase, 8);
-              const offX = ((h2 % 7) - 3);
-              const offY = ((h3 % 7) - 4);
+          // FOREST FLOOR DETAILS — ferns, fallen leaves, moss patches, rocks
+          if (isForest) {
+            // Fallen leaves (orange/brown)
+            for (let i = 0; i < 5; i++) {
+              const hh = ((h2 * (i * 7 + 1)) ^ h3) >>> 0;
+              const lx = px + (hh % TILE);
+              const ly = py + ((hh >> 5) % TILE);
+              const leafColor = (hh % 3) === 0 ? "rgba(160,80,20,0.55)"
+                              : (hh % 3) === 1 ? "rgba(130,100,30,0.45)"
+                              :                  "rgba(90,60,15,0.5)";
+              ctx.fillStyle = leafColor;
               ctx.beginPath();
-              ctx.arc(treeCX + offX, treeCY + offY, canopyR * 0.55, 0, Math.PI * 2);
+              ctx.ellipse(lx, ly, 1.8, 1, (hh % 314) * 0.02, 0, Math.PI * 2);
               ctx.fill();
             }
+            // Fern cluster (darker green tuft) — one per tile if hash agrees
+            if ((h3 % 4) === 0) {
+              const fx = px + 6 + (h1 % (TILE - 12));
+              const fy = py + 6 + (h2 % (TILE - 12));
+              ctx.fillStyle = timeFilter(state.timeOfDay, "#1a4a0a");
+              for (let fi = 0; fi < 5; fi++) {
+                const fa = (fi / 5) * Math.PI * 2;
+                ctx.beginPath();
+                ctx.ellipse(fx + Math.cos(fa) * 4, fy + Math.sin(fa) * 3, 2.5, 1, fa, 0, Math.PI * 2);
+                ctx.fill();
+              }
+            }
+            // Rock (gray lumpy shape)
+            if ((h1 % 8) === 0) {
+              const rx = px + 8 + (h3 % (TILE - 16));
+              const ry = py + 8 + (h2 % (TILE - 16));
+              ctx.fillStyle = timeFilter(state.timeOfDay, "#607060");
+              ctx.beginPath();
+              ctx.ellipse(rx, ry, 4, 3, (h1 % 31) * 0.1, 0, Math.PI * 2);
+              ctx.fill();
+              ctx.fillStyle = "rgba(255,255,255,0.14)";
+              ctx.beginPath();
+              ctx.ellipse(rx - 1, ry - 1, 2, 1.2, 0.4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            // Mushroom (tiny, red cap with dots)
+            if ((h2 % 14) === 0) {
+              const mx = px + 10 + (h1 % (TILE - 20));
+              const my = py + 10 + (h3 % (TILE - 20));
+              ctx.fillStyle = timeFilter(state.timeOfDay, "#c84020");
+              ctx.beginPath();
+              ctx.arc(mx, my, 2.5, Math.PI, 0);
+              ctx.fill();
+              ctx.fillStyle = "#e85828";
+              ctx.beginPath();
+              ctx.arc(mx, my, 2.5, Math.PI, 0);
+              ctx.fill();
+              // stem
+              ctx.fillStyle = timeFilter(state.timeOfDay, "#e8d8b0");
+              ctx.fillRect(mx - 0.7, my, 1.4, 2.5);
+              // cap dots
+              ctx.fillStyle = "rgba(255,255,255,0.7)";
+              ctx.beginPath();
+              ctx.arc(mx - 0.8, my - 0.6, 0.5, 0, Math.PI * 2);
+              ctx.arc(mx + 0.8, my - 0.4, 0.4, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
 
-            // Sunlit top highlight
-            ctx.fillStyle = timeFilter(state.timeOfDay, shadeHex(canopyBase, 28));
+          // TREES
+          const treeChance = isForest ? 0.58 : isPark ? 0.30 : 0;
+          if (treeChance > 0 && (h2 % 1000) / 1000 < treeChance) {
+            const treeCX = px + 14 + (h1 % (TILE - 28));
+            const treeCY = py + 14 + (h3 % (TILE - 28));
+            const ageSeed = (h1 ^ h3) % 100;
+            const isPine = isForest && (h1 % 3) === 0; // 1/3 of forest trees are pines
+
+            const canopyR = isForest
+              ? 15 + (ageSeed % 10)
+              : 11 + (ageSeed % 7);
+
+            // Shadow
+            ctx.fillStyle = "rgba(0,0,0,0.25)";
             ctx.beginPath();
-            ctx.arc(treeCX - canopyR * 0.28, treeCY - canopyR * 0.3, canopyR * 0.3, 0, Math.PI * 2);
+            ctx.ellipse(treeCX + 5, treeCY + 7, canopyR * 0.85, canopyR * 0.42, 0.3, 0, Math.PI * 2);
             ctx.fill();
 
-            // Tiny bright specular dot
-            ctx.fillStyle = "rgba(255,255,255,0.18)";
+            // Trunk — thicker, more textured
+            const trunkW = isPine ? 2.5 : 3.5;
+            const trunkColor = isPine ? "#3a2818" : "#5a3a22";
+            ctx.fillStyle = timeFilter(state.timeOfDay, trunkColor);
             ctx.beginPath();
-            ctx.arc(treeCX - canopyR * 0.34, treeCY - canopyR * 0.38, canopyR * 0.12, 0, Math.PI * 2);
+            ctx.ellipse(treeCX, treeCY + canopyR * 0.3, trunkW, trunkW * 0.7, 0, 0, Math.PI * 2);
             ctx.fill();
+            // bark texture
+            ctx.strokeStyle = timeFilter(state.timeOfDay, shadeHex(trunkColor, -20));
+            ctx.lineWidth = 0.4;
+            ctx.beginPath();
+            ctx.moveTo(treeCX - 0.5, treeCY + canopyR * 0.15);
+            ctx.lineTo(treeCX + 0.3, treeCY + canopyR * 0.45);
+            ctx.stroke();
+
+            if (isPine) {
+              // PINE TREE — layered triangular tiers
+              const pineColor = timeFilter(state.timeOfDay, "#1a4410");
+              const tier = canopyR * 0.42;
+              for (let ti = 0; ti < 3; ti++) {
+                const ty = treeCY - ti * tier * 0.7 + tier * 0.4;
+                const tr = canopyR * (1 - ti * 0.28);
+                // Shadow tier
+                ctx.fillStyle = shadeHex(pineColor, -18 + ti * 4);
+                ctx.beginPath();
+                ctx.moveTo(treeCX, ty - tr);
+                ctx.lineTo(treeCX + tr, ty + tr * 0.5);
+                ctx.lineTo(treeCX - tr, ty + tr * 0.5);
+                ctx.closePath();
+                ctx.fill();
+                // Lit side (NW quadrant highlight)
+                ctx.fillStyle = shadeHex(pineColor, 16 - ti * 4);
+                ctx.beginPath();
+                ctx.moveTo(treeCX, ty - tr);
+                ctx.lineTo(treeCX, ty + tr * 0.5);
+                ctx.lineTo(treeCX - tr * 0.6, ty + tr * 0.2);
+                ctx.closePath();
+                ctx.fill();
+                // Snow cap on very top tier (variant)
+                if (ti === 2 && ageSeed > 60) {
+                  ctx.fillStyle = "rgba(240,248,255,0.5)";
+                  ctx.beginPath();
+                  ctx.moveTo(treeCX, ty - tr);
+                  ctx.lineTo(treeCX + tr * 0.3, ty - tr * 0.3);
+                  ctx.lineTo(treeCX - tr * 0.3, ty - tr * 0.3);
+                  ctx.closePath();
+                  ctx.fill();
+                }
+              }
+            } else {
+              // BROADLEAF TREE — round multi-layer canopy
+              const canopyBase = isForest
+                ? timeFilter(state.timeOfDay, "#1e4d12")
+                : timeFilter(state.timeOfDay, "#2a5a18");
+
+              // Outer shadow ring
+              ctx.fillStyle = shadeHex(canopyBase, -18);
+              ctx.beginPath();
+              ctx.arc(treeCX, treeCY, canopyR, 0, Math.PI * 2);
+              ctx.fill();
+
+              // Main canopy
+              ctx.fillStyle = canopyBase;
+              ctx.beginPath();
+              ctx.arc(treeCX - 2, treeCY - 1, canopyR * 0.8, 0, Math.PI * 2);
+              ctx.fill();
+
+              // Secondary cluster
+              if (ageSeed % 3 !== 0) {
+                ctx.fillStyle = shadeHex(canopyBase, 10);
+                const offX = ((h2 % 9) - 4);
+                const offY = ((h3 % 9) - 5);
+                ctx.beginPath();
+                ctx.arc(treeCX + offX, treeCY + offY, canopyR * 0.56, 0, Math.PI * 2);
+                ctx.fill();
+              }
+
+              // Tertiary small cluster for old trees
+              if (ageSeed > 70) {
+                ctx.fillStyle = shadeHex(canopyBase, 6);
+                ctx.beginPath();
+                ctx.arc(treeCX + (h2 % 12) - 6, treeCY + (h3 % 10) - 5, canopyR * 0.38, 0, Math.PI * 2);
+                ctx.fill();
+              }
+
+              // Top highlight
+              ctx.fillStyle = timeFilter(state.timeOfDay, shadeHex(canopyBase, 32));
+              ctx.beginPath();
+              ctx.arc(treeCX - canopyR * 0.3, treeCY - canopyR * 0.32, canopyR * 0.3, 0, Math.PI * 2);
+              ctx.fill();
+
+              // Specular dot
+              ctx.fillStyle = "rgba(255,255,255,0.2)";
+              ctx.beginPath();
+              ctx.arc(treeCX - canopyR * 0.36, treeCY - canopyR * 0.4, canopyR * 0.12, 0, Math.PI * 2);
+              ctx.fill();
+            }
           }
           break;
         }
@@ -421,94 +536,260 @@ export function renderWorld(rc: RenderContext) {
         // ─── WATER ──────────────────────────────────────────────────────────────
         case "water": {
           const tt2 = performance.now() / 1000;
-          const wBase = timeFilter(state.timeOfDay, "#0e2a42");
-          ctx.fillStyle = wBase;
+          const wBase = timeFilter(state.timeOfDay, "#0c2840");
+          // Depth gradient — slightly lighter toward edges
+          const wGrad = ctx.createLinearGradient(px, py, px + TILE, py + TILE);
+          wGrad.addColorStop(0, shadeHex(wBase, 8));
+          wGrad.addColorStop(1, wBase);
+          ctx.fillStyle = wGrad;
           ctx.fillRect(px, py, TILE, TILE);
 
-          // Slow horizontal shimmer lines (wave effect)
-          ctx.strokeStyle = "rgba(80,160,220,0.18)";
-          ctx.lineWidth = 1;
-          for (let i = 0; i < 4; i++) {
-            const oy = py + 6 + i * 14 + Math.sin(tt2 * 0.7 + (x + y) * 0.4 + i) * 2.5;
-            const phase = (tt2 * 0.6 + i * 0.8) % 1;
-            ctx.globalAlpha = 0.4 + Math.sin(tt2 + i * 1.3) * 0.2;
+          // Slow animated wave lines — offset per tile for tiling variety
+          const waveSeed = (x * 3 + y * 5);
+          for (let i = 0; i < 5; i++) {
+            const oy = py + 4 + i * 11 + Math.sin(tt2 * 0.65 + waveSeed * 0.3 + i * 0.9) * 3;
+            const waveAlpha = 0.12 + Math.sin(tt2 * 0.8 + i * 1.1 + waveSeed * 0.2) * 0.08;
+            ctx.globalAlpha = Math.max(0, waveAlpha);
+            ctx.strokeStyle = "rgba(80,170,230,1)";
+            ctx.lineWidth = i % 2 === 0 ? 1 : 0.5;
             ctx.beginPath();
+            // Slightly curved wave lines
+            const cx1 = px + TILE * 0.25;
+            const cx2 = px + TILE * 0.75;
+            const wcy = Math.sin(tt2 * 0.5 + i + waveSeed * 0.15) * 1.5;
             ctx.moveTo(px, oy);
-            ctx.lineTo(px + TILE, oy);
+            ctx.bezierCurveTo(cx1, oy + wcy, cx2, oy - wcy, px + TILE, oy);
             ctx.stroke();
           }
           ctx.globalAlpha = 1;
 
-          // Specular glint (single bright point, moves slowly)
-          const gx = px + ((h1 ^ Math.floor(tt2 * 0.2)) % TILE);
-          const gy = py + 4 + ((h2 ^ Math.floor(tt2 * 0.15)) % (TILE - 8));
-          ctx.fillStyle = "rgba(180,230,255,0.18)";
-          ctx.fillRect(gx, gy, 2, 1);
+          // Foam cap at wave crests — tiny bright flecks
+          for (let i = 0; i < 3; i++) {
+            const hh = ((h1 * (i + 1)) ^ h2) >>> 0;
+            const fx = px + (hh % TILE);
+            const fy = py + 3 + i * 11 + Math.sin(tt2 * 0.7 + waveSeed * 0.25 + i) * 3;
+            ctx.fillStyle = `rgba(255,255,255,${0.08 + (hh % 10) * 0.012})`;
+            ctx.fillRect(fx, fy, 1 + (hh % 3), 0.5);
+          }
+
+          // Multiple specular glints (sunlight on water)
+          for (let gi = 0; gi < 3; gi++) {
+            const ghh = ((h1 * (gi + 2)) ^ h3) >>> 0;
+            const gxp = px + (ghh % TILE);
+            const gyp = py + 3 + ((ghh >> 4) % (TILE - 6));
+            const glintAlpha = 0.1 + Math.sin(tt2 * 1.5 + gi * 2.3 + waveSeed * 0.4) * 0.08;
+            ctx.fillStyle = `rgba(200,240,255,${Math.max(0, glintAlpha)})`;
+            ctx.fillRect(gxp, gyp, 2 + gi, 1);
+          }
           break;
         }
 
         // ─── SAND / BEACH ────────────────────────────────────────────────────────
         case "sand": {
-          // Warm sandy base — varies slightly per tile for natural look
-          const sandTone = (h1 % 30) - 15; // -15..+15
-          const sBase = timeFilter(state.timeOfDay, shadeHex("#c8ae78", sandTone));
+          const sandTone = (h1 % 30) - 15;
+          const sBase = timeFilter(state.timeOfDay, shadeHex("#ccb47a", sandTone));
           ctx.fillStyle = sBase;
           ctx.fillRect(px, py, TILE, TILE);
 
-          // Ripple bands — subtle horizontal streaks imitating tide lines
-          for (let i = 0; i < 4; i++) {
+          // Tide ripple bands
+          for (let i = 0; i < 5; i++) {
             const hh = ((h2 * (i + 1)) ^ h3) >>> 0;
             const ry2 = py + (hh % TILE);
-            const rw2 = 6 + (hh >> 8) % 18;
-            const rx2 = px + (hh >> 3) % (TILE - rw2);
-            ctx.fillStyle = i % 2 === 0 ? "rgba(0,0,0,0.07)" : "rgba(255,255,255,0.11)";
+            const rw2 = 8 + (hh >> 8) % 22;
+            const rx2 = px + (hh >> 3) % Math.max(1, TILE - rw2);
+            ctx.fillStyle = i % 2 === 0 ? "rgba(0,0,0,0.06)" : "rgba(255,255,255,0.13)";
             ctx.fillRect(rx2, ry2, rw2, 1);
           }
 
           // Fine grain speckle
-          for (let i = 0; i < 20; i++) {
+          for (let i = 0; i < 24; i++) {
             const hh = ((h1 >> (i % 6)) ^ (h3 * i)) >>> 0;
             const sx = px + (hh % TILE);
             const sy = py + ((hh >> 4) % TILE);
             ctx.fillStyle = i % 4 === 0
-              ? "rgba(160,120,60,0.18)"
+              ? "rgba(155,110,55,0.2)"
               : i % 4 === 1
-                ? "rgba(255,240,200,0.16)"
-                : "rgba(0,0,0,0.07)";
+                ? "rgba(255,240,190,0.18)"
+                : "rgba(0,0,0,0.06)";
             ctx.fillRect(sx, sy, 1, 1);
           }
 
-          // Occasional shell / pebble (stable per tile)
-          if ((h3 % 7) === 0) {
+          // Shells & pebbles
+          if ((h3 % 5) === 0) {
             const sx = px + 8 + (h1 % (TILE - 16));
             const sy2 = py + 8 + (h2 % (TILE - 16));
-            ctx.fillStyle = "rgba(220,200,160,0.8)";
+            // Shell shape (two overlapping ellipses)
+            ctx.fillStyle = "rgba(225,205,165,0.9)";
             ctx.beginPath();
-            ctx.ellipse(sx, sy2, 3, 2, (h1 % 100) * 0.063, 0, Math.PI * 2);
+            ctx.ellipse(sx, sy2, 3.5, 2, (h1 % 100) * 0.063, 0, Math.PI * 2);
             ctx.fill();
-            ctx.strokeStyle = "rgba(140,110,70,0.5)";
+            ctx.fillStyle = "rgba(180,150,100,0.6)";
+            ctx.beginPath();
+            ctx.ellipse(sx + 1, sy2, 2, 1.2, (h1 % 100) * 0.063, 0, Math.PI * 2);
+            ctx.fill();
+            // Ridge lines on shell
+            ctx.strokeStyle = "rgba(140,105,65,0.45)";
             ctx.lineWidth = 0.4;
+            ctx.beginPath();
+            ctx.moveTo(sx - 3, sy2);
+            ctx.lineTo(sx + 3, sy2);
             ctx.stroke();
           }
+          // Extra pebble cluster
+          if ((h1 % 9) === 0) {
+            const px2 = px + 4 + (h3 % (TILE - 8));
+            const py2 = py + 4 + (h2 % (TILE - 8));
+            ctx.fillStyle = "rgba(160,140,110,0.7)";
+            for (let pi = 0; pi < 3; pi++) {
+              const ph = ((h1 * (pi + 1)) ^ h2) >>> 0;
+              ctx.beginPath();
+              ctx.arc(px2 + (ph % 8) - 4, py2 + ((ph >> 4) % 6) - 3, 1 + (ph % 2), 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
 
-          // Check for water neighbours — draw wet sand edge
+          // Footprints (stable per tile, two-step pattern)
+          if ((h2 % 6) === 0) {
+            const fpx = px + 10 + (h1 % (TILE - 20));
+            const fpy = py + 10 + (h3 % (TILE - 20));
+            const fpAngle = (h2 % 628) * 0.01;
+            ctx.fillStyle = "rgba(160,130,80,0.35)";
+            for (let fi = 0; fi < 3; fi++) {
+              const fx = fpx + Math.cos(fpAngle) * fi * 7;
+              const fy = fpy + Math.sin(fpAngle) * fi * 7;
+              const side = fi % 2 === 0 ? -1 : 1;
+              ctx.beginPath();
+              ctx.ellipse(fx + Math.sin(fpAngle) * side * 2.5,
+                          fy - Math.cos(fpAngle) * side * 2.5,
+                          2.5, 1.4, fpAngle, 0, Math.PI * 2);
+              ctx.fill();
+            }
+          }
+
+          // Check for water neighbours — draw wet sand edge + animated foam
           const wN = world.tiles[y - 1]?.[x]?.type === "water";
           const wS = world.tiles[y + 1]?.[x]?.type === "water";
           const wW = world.tiles[y]?.[x - 1]?.type === "water";
           const wE = world.tiles[y]?.[x + 1]?.type === "water";
           if (wN || wS || wW || wE) {
-            // Wet sand strip along the water edge — slightly darker & more saturated
-            ctx.fillStyle = timeFilter(state.timeOfDay, "#a89050");
-            if (wN) ctx.fillRect(px, py, TILE, 5);
-            if (wS) ctx.fillRect(px, py + TILE - 5, TILE, 5);
-            if (wW) ctx.fillRect(px, py, 5, TILE);
-            if (wE) ctx.fillRect(px + TILE - 5, py, 5, TILE);
-            // Thin foam line at very edge
-            ctx.fillStyle = "rgba(255,255,255,0.28)";
-            if (wN) ctx.fillRect(px, py, TILE, 1);
-            if (wS) ctx.fillRect(px, py + TILE - 1, TILE, 1);
-            if (wW) ctx.fillRect(px, py, 1, TILE);
-            if (wE) ctx.fillRect(px + TILE - 1, py, 1, TILE);
+            const tt3 = performance.now() / 1000;
+            // Multi-gradient wet sand (3 bands getting progressively darker)
+            const wetDark = timeFilter(state.timeOfDay, "#8a7040");
+            const wetMid  = timeFilter(state.timeOfDay, "#a08050");
+            if (wN) {
+              ctx.fillStyle = wetDark;  ctx.fillRect(px, py, TILE, 4);
+              ctx.fillStyle = wetMid;   ctx.fillRect(px, py + 4, TILE, 5);
+            }
+            if (wS) {
+              ctx.fillStyle = wetDark;  ctx.fillRect(px, py + TILE - 4, TILE, 4);
+              ctx.fillStyle = wetMid;   ctx.fillRect(px, py + TILE - 9, TILE, 5);
+            }
+            if (wW) {
+              ctx.fillStyle = wetDark;  ctx.fillRect(px, py, 4, TILE);
+              ctx.fillStyle = wetMid;   ctx.fillRect(px + 4, py, 5, TILE);
+            }
+            if (wE) {
+              ctx.fillStyle = wetDark;  ctx.fillRect(px + TILE - 4, py, 4, TILE);
+              ctx.fillStyle = wetMid;   ctx.fillRect(px + TILE - 9, py, 5, TILE);
+            }
+
+            // Animated foam line at the water edge — pulses in/out
+            const foamAlpha = 0.22 + Math.sin(tt3 * 1.2 + (x + y) * 0.5) * 0.12;
+            ctx.fillStyle = `rgba(255,255,255,${Math.max(0, foamAlpha)})`;
+            if (wN) ctx.fillRect(px, py, TILE, 2);
+            if (wS) ctx.fillRect(px, py + TILE - 2, TILE, 2);
+            if (wW) ctx.fillRect(px, py, 2, TILE);
+            if (wE) ctx.fillRect(px + TILE - 2, py, 2, TILE);
+
+            // Foam speckles along edge
+            for (let fi = 0; fi < 6; fi++) {
+              const fhh = ((h1 * (fi + 1)) ^ h2) >>> 0;
+              const foa = 0.15 + Math.sin(tt3 * 1.8 + fi * 1.7 + (x * 2 + y)) * 0.1;
+              ctx.fillStyle = `rgba(255,255,255,${Math.max(0, foa)})`;
+              if (wN) ctx.fillRect(px + (fhh % TILE), py + 2, 3 + (fhh % 6), 1);
+              if (wS) ctx.fillRect(px + (fhh % TILE), py + TILE - 3, 3 + (fhh % 5), 1);
+            }
+          }
+
+          // BEACH AMENITIES — palm tree, umbrella (stable per tile)
+          if ((h1 % 12) === 0 && !(wN || wS || wW || wE)) {
+            // Palm tree
+            const ptx = px + 10 + (h3 % (TILE - 20));
+            const pty = py + 10 + (h2 % (TILE - 20));
+            // Shadow
+            ctx.fillStyle = "rgba(0,0,0,0.18)";
+            ctx.beginPath();
+            ctx.ellipse(ptx + 6, pty + 4, 8, 3, 0.2, 0, Math.PI * 2);
+            ctx.fill();
+            // Trunk (slightly curved)
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#7a5828");
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(ptx, pty + 16);
+            ctx.bezierCurveTo(ptx - 1, pty + 8, ptx + 2, pty + 4, ptx + 1, pty);
+            ctx.stroke();
+            // Fronds
+            const frondColor = timeFilter(state.timeOfDay, "#2a6a18");
+            for (let fi = 0; fi < 6; fi++) {
+              const fa = (fi / 6) * Math.PI * 2;
+              ctx.strokeStyle = frondColor;
+              ctx.lineWidth = 1.8;
+              ctx.beginPath();
+              ctx.moveTo(ptx + 1, pty);
+              const ex = ptx + 1 + Math.cos(fa) * 11;
+              const ey = pty + Math.sin(fa) * 6 - 2;
+              ctx.bezierCurveTo(
+                ptx + 1 + Math.cos(fa) * 5, pty + Math.sin(fa) * 3 - 1,
+                ex - Math.cos(fa) * 2, ey,
+                ex, ey
+              );
+              ctx.stroke();
+              // Leaf tip
+              ctx.fillStyle = shadeHex(frondColor, -10);
+              ctx.beginPath();
+              ctx.ellipse(ex, ey, 2.5, 1, fa, 0, Math.PI * 2);
+              ctx.fill();
+            }
+            // Coconuts
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#7a5020");
+            ctx.beginPath();
+            ctx.arc(ptx + 2, pty + 1, 2, 0, Math.PI * 2);
+            ctx.arc(ptx - 1, pty + 2, 1.6, 0, Math.PI * 2);
+            ctx.fill();
+          }
+          // Beach umbrella & towel
+          if ((h2 % 15) === 1 && !(wN || wS || wW || wE)) {
+            const ubx = px + 8 + (h1 % (TILE - 16));
+            const uby = py + 8 + (h3 % (TILE - 16));
+            // Towel
+            const towelColors = ["#e04040", "#4060e0", "#e0c020", "#20a040"];
+            ctx.fillStyle = towelColors[(h1 % 4)];
+            ctx.beginPath();
+            ctx.roundRect(ubx - 6, uby + 2, 12, 8, 1);
+            ctx.fill();
+            // Pole
+            ctx.strokeStyle = "#c0c0c0";
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(ubx, uby + 4);
+            ctx.lineTo(ubx, uby - 8);
+            ctx.stroke();
+            // Canopy
+            const umbColors = ["#e86030", "#3080e8", "#e8d030", "#28b850"];
+            ctx.fillStyle = umbColors[(h2 % 4)];
+            ctx.beginPath();
+            ctx.moveTo(ubx - 9, uby - 5);
+            ctx.lineTo(ubx, uby - 10);
+            ctx.lineTo(ubx + 9, uby - 5);
+            ctx.closePath();
+            ctx.fill();
+            ctx.fillStyle = shadeHex(umbColors[(h2 % 4)], -20);
+            ctx.beginPath();
+            ctx.moveTo(ubx - 9, uby - 5);
+            ctx.lineTo(ubx, uby - 8);
+            ctx.lineTo(ubx + 0, uby - 5);
+            ctx.closePath();
+            ctx.fill();
           }
           break;
         }
@@ -1759,120 +2040,496 @@ function drawAnimalShadow(ctx: CanvasRenderingContext2D, a: Animal) {
 
 function drawAnimal(ctx: CanvasRenderingContext2D, a: Animal) {
   ctx.save();
-  const lift = a.flyZ * 10;
+  const lift = a.flyZ * 12;
   ctx.translate(a.x, a.y - lift);
   ctx.rotate(a.angle);
 
   if (a.hp <= 0) {
+    // Flattened body + blood pool
+    ctx.fillStyle = "rgba(100,40,40,0.55)";
+    ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = a.furColor;
+    ctx.globalAlpha = 0.7;
     ctx.beginPath(); ctx.ellipse(0, 0, 6, 3, 0, 0, Math.PI * 2); ctx.fill();
-    // blood puddle
-    ctx.fillStyle = "rgba(160, 24, 24, 0.4)";
-    ctx.beginPath(); ctx.ellipse(0, 0, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.globalAlpha = 1;
     ctx.restore();
     return;
   }
 
-  const walk = Math.sin(a.walkPhase) * 2;
+  const walk = Math.sin(a.walkPhase);
   const color = a.furColor;
+  const dark  = shadeHex(color, -22);
+  const lite  = shadeHex(color, 18);
+
+  // Helper: draw a quadruped leg (front/rear × left/right)
+  const leg = (bx: number, by: number, swing: number, len = 5) => {
+    ctx.strokeStyle = dark;
+    ctx.lineWidth = 2;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(bx, by);
+    ctx.lineTo(bx + swing * 1.5, by + len);
+    ctx.stroke();
+    ctx.fillStyle = dark;
+    ctx.beginPath();
+    ctx.arc(bx + swing * 1.5, by + len, 1, 0, Math.PI * 2);
+    ctx.fill();
+  };
 
   if (a.kind === "deer") {
-    ctx.fillStyle = color;
+    // DEER — elegant body, long neck, antlers
+    const lW = walk * 2.5;
+    // Four legs
+    leg(-5, 3,  lW, 6);
+    leg(-2, 3, -lW, 6);
+    leg( 2, 3,  lW, 6);
+    leg( 5, 3, -lW, 6);
     // Body
-    ctx.beginPath(); ctx.ellipse(0, 0, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
-    // Neck and Head
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 8, 4.5, -0.1, 0, Math.PI * 2); ctx.fill();
+    // Body highlight
+    ctx.fillStyle = lite;
+    ctx.beginPath(); ctx.ellipse(-1, -1.5, 5, 2.5, -0.1, 0, Math.PI * 2); ctx.fill();
+    // White belly patch
+    ctx.fillStyle = "rgba(255,240,210,0.6)";
+    ctx.beginPath(); ctx.ellipse(0, 1.5, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+    // Neck
+    ctx.fillStyle = color;
     ctx.save();
-    ctx.translate(6, -2);
-    ctx.rotate(-0.4);
-    ctx.fillRect(0, -2, 4, 6); // Neck
-    ctx.translate(3, -2);
-    ctx.beginPath(); ctx.ellipse(0, 0, 3, 2, 0, 0, Math.PI * 2); ctx.fill();
-    // Antlers (if breed > 1)
+    ctx.translate(6, -2.5);
+    ctx.rotate(-0.5);
+    ctx.beginPath(); ctx.ellipse(0, 0, 2.2, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.restore();
+    // Head
+    ctx.save();
+    ctx.translate(9.5, -4.5);
+    ctx.rotate(-0.3);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 3.2, 2.4, 0.2, 0, Math.PI * 2); ctx.fill();
+    // Snout
+    ctx.fillStyle = shadeHex(color, -10);
+    ctx.beginPath(); ctx.ellipse(2.5, 0.4, 1.5, 1.1, 0.1, 0, Math.PI * 2); ctx.fill();
+    // Nostril
+    ctx.fillStyle = "#2a1a0a";
+    ctx.beginPath(); ctx.arc(3.2, 0.3, 0.35, 0, Math.PI * 2); ctx.fill();
+    // Eye
+    ctx.fillStyle = "#1a0a00";
+    ctx.beginPath(); ctx.arc(0.5, -0.8, 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath(); ctx.arc(0.7, -1.0, 0.22, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    ctx.fillStyle = lite;
+    ctx.beginPath();
+    ctx.moveTo(-0.5, -1.5); ctx.lineTo(-1.5, -4.5); ctx.lineTo(0.8, -2.2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#d89090";
+    ctx.beginPath();
+    ctx.moveTo(-0.3, -1.8); ctx.lineTo(-1.2, -3.8); ctx.lineTo(0.5, -2.2);
+    ctx.closePath(); ctx.fill();
+    // Antlers (buck — breed > 1)
     if (a.breed > 1) {
-      ctx.strokeStyle = "#4a3a2a"; ctx.lineWidth = 1;
-      ctx.beginPath(); ctx.moveTo(0, -1); ctx.lineTo(-2, -5); ctx.lineTo(-4, -4);
-      ctx.moveTo(-2, -5); ctx.lineTo(-1, -7); ctx.stroke();
+      ctx.strokeStyle = "#4a3218"; ctx.lineWidth = 1.2; ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(-0.5, -2); ctx.lineTo(-1.5, -6); ctx.lineTo(-3.5, -5);
+      ctx.moveTo(-1.5, -6); ctx.lineTo(-1, -8.5); ctx.lineTo(0, -7);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(1, -1.8); ctx.lineTo(2, -5.5); ctx.lineTo(4, -4.5);
+      ctx.moveTo(2, -5.5); ctx.lineTo(2, -8); ctx.lineTo(3.5, -6.5);
+      ctx.stroke();
     }
     ctx.restore();
-    // Legs
-    ctx.fillStyle = shadeHex(color, -20);
-    ctx.fillRect(-5, 3 + walk, 1.5, 5);
-    ctx.fillRect(3, 3 - walk, 1.5, 5);
+    // Tail (white tuft)
+    ctx.fillStyle = "#f0e8d8";
+    ctx.beginPath(); ctx.ellipse(-8, -1, 2, 1.5, 0.4, 0, Math.PI * 2); ctx.fill();
+
   } else if (a.kind === "bear") {
+    // BEAR — massive, hunched
+    const lW = walk * 1.8;
+    // Four thick legs
+    leg(-6, 5,  lW, 5); leg(-3, 5, -lW, 5);
+    leg( 3, 5,  lW, 5); leg( 6, 5, -lW, 5);
+    // Body — large rounded rectangle
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.ellipse(0, 1, 12, 8.5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = color;
-    // Massive body
-    ctx.beginPath(); ctx.ellipse(0, 0, 11, 8, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-1, 0, 11, 7.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Fur texture (dark streak lines)
+    ctx.strokeStyle = dark; ctx.lineWidth = 0.6;
+    for (let fi = -3; fi <= 3; fi++) {
+      ctx.beginPath();
+      ctx.moveTo(fi * 3, -7); ctx.lineTo(fi * 2.5, 7);
+      ctx.stroke();
+    }
     // Head
-    ctx.save(); ctx.translate(9, 0);
-    ctx.beginPath(); ctx.arc(0, 0, 4.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#111"; ctx.beginPath(); ctx.arc(3.5, 0, 1, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(11, -1);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(0, 0, 5.5, 0, Math.PI * 2); ctx.fill();
+    // Snout
+    ctx.fillStyle = shadeHex(color, -10);
+    ctx.beginPath(); ctx.ellipse(4.5, 0.5, 2.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#0a0606";
+    ctx.beginPath(); ctx.arc(5.8, 0.3, 0.7, 0, Math.PI * 2); ctx.fill();
+    // Eyes
+    ctx.fillStyle = "#0a0a0a";
+    ctx.beginPath(); ctx.arc(2, -2.5, 0.8, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.45)";
+    ctx.beginPath(); ctx.arc(2.3, -2.8, 0.3, 0, Math.PI * 2); ctx.fill();
+    // Ears
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(-2.5, -4.5, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2, -4.8, 2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.arc(-2.5, -4.5, 1.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(2, -4.8, 1.2, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
-    // Thick legs
-    ctx.fillStyle = shadeHex(color, -15);
-    ctx.beginPath(); ctx.ellipse(-6, 6 + walk * 0.5, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(6, 6 - walk * 0.5, 3, 4, 0, 0, Math.PI * 2); ctx.fill();
+    // Claws
+    ctx.strokeStyle = "#1a1010"; ctx.lineWidth = 0.8;
+    [[-9, 9], [-5, 10], [5, 9], [9, 10]].forEach(([cx, cy]) => {
+      ctx.beginPath();
+      for (let ci = 0; ci < 3; ci++) {
+        ctx.moveTo(cx + ci * 1.2 - 1.5, cy);
+        ctx.lineTo(cx + ci * 1.2 - 1.8, cy + 2.5);
+      }
+      ctx.stroke();
+    });
+
   } else if (a.kind === "wolf") {
+    // WOLF — sleek, predatory
+    const lW = walk * 2.2;
+    leg(-5, 3,  lW, 5.5); leg(-2, 3, -lW, 5.5);
+    leg( 2, 3,  lW, 5.5); leg( 5, 3, -lW, 5.5);
+    // Body
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.ellipse(0, 0, 9, 5, -0.1, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = color;
-    ctx.beginPath(); ctx.ellipse(0, 0, 8, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.save(); ctx.translate(7, 0);
-    ctx.beginPath(); ctx.arc(0, 0, 3.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = "#111"; ctx.fillRect(2, -1, 3, 2); // snout
+    ctx.beginPath(); ctx.ellipse(-1, -1, 8, 4, -0.15, 0, Math.PI * 2); ctx.fill();
+    // Lighter belly
+    ctx.fillStyle = shadeHex(color, 22);
+    ctx.beginPath(); ctx.ellipse(-1, 1, 4, 2, 0, 0, Math.PI * 2); ctx.fill();
+    // Neck
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(6, -2, 2.5, 3.5, -0.5, 0, Math.PI * 2); ctx.fill();
+    // Mane / scruff
+    ctx.fillStyle = dark;
+    for (let mi = 0; mi < 5; mi++) {
+      ctx.beginPath();
+      ctx.ellipse(4 + mi * 0.5, -4, 1.2, 0.6, -0.3 + mi * 0.1, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    // Head
+    ctx.save(); ctx.translate(9, -3.5); ctx.rotate(-0.15);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(0, 0, 3.8, 2.8, 0, 0, Math.PI * 2); ctx.fill();
+    // Long snout
+    ctx.fillStyle = shadeHex(color, -12);
+    ctx.beginPath(); ctx.roundRect(2, -1, 5, 2, 0.8); ctx.fill();
+    // Nose
+    ctx.fillStyle = "#0a0a0a";
+    ctx.beginPath(); ctx.ellipse(6.5, -0.2, 1, 0.7, 0, 0, Math.PI * 2); ctx.fill();
+    // Teeth (when state=attack)
+    if (a.state === "attack") {
+      ctx.fillStyle = "#f5f0e0";
+      ctx.beginPath();
+      ctx.moveTo(3.5, 1); ctx.lineTo(4, 2.5); ctx.lineTo(4.5, 1);
+      ctx.moveTo(5.5, 1); ctx.lineTo(6, 2.2); ctx.lineTo(6.5, 1);
+      ctx.fill();
+    }
+    // Eye (pale yellow, predator)
+    ctx.fillStyle = "#c8b820";
+    ctx.beginPath(); ctx.arc(0.5, -1.2, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#0a0a0a";
+    ctx.beginPath(); ctx.arc(0.7, -1.2, 0.5, 0, Math.PI * 2); ctx.fill();
+    // Ears (pointed)
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.moveTo(-1.5, -1.5); ctx.lineTo(-3, -5.5); ctx.lineTo(0.5, -2.5);
+    ctx.closePath(); ctx.fill();
+    ctx.beginPath();
+    ctx.moveTo(1.5, -1.5); ctx.lineTo(3, -5); ctx.lineTo(3.5, -2.2);
+    ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#d07070";
+    ctx.beginPath();
+    ctx.moveTo(-1.2, -2); ctx.lineTo(-2.3, -4.5); ctx.lineTo(0.2, -2.8);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
-    // tail
-    ctx.strokeStyle = color; ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.moveTo(-7, 0); ctx.lineTo(-11, walk); ctx.stroke();
+    // Tail (bushy, curved up)
+    ctx.strokeStyle = color; ctx.lineWidth = 3; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-8, 0); ctx.bezierCurveTo(-13, 0, -14, -4, -12, -6);
+    ctx.stroke();
+    ctx.strokeStyle = shadeHex(color, 18); ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(-8, 0); ctx.bezierCurveTo(-13, 0, -14, -4, -12, -6);
+    ctx.stroke();
+
   } else if (a.kind === "cow") {
+    // COW — stocky, spotted
+    const lW = walk * 1.5;
+    leg(-7, 5,  lW, 6); leg(-3, 5, -lW, 6);
+    leg( 3, 5,  lW, 6); leg( 7, 5, -lW, 6);
     ctx.fillStyle = color;
-    ctx.beginPath(); ctx.roundRect(-10, -6, 20, 12, 3); ctx.fill();
-    // spots
-    ctx.fillStyle = "#222";
-    ctx.beginPath(); ctx.arc(-4, -2, 4, 0, Math.PI * 2); ctx.arc(5, 3, 3, 0, Math.PI * 2); ctx.fill();
-    // head
-    ctx.fillStyle = color; ctx.save(); ctx.translate(11, 0);
-    ctx.beginPath(); ctx.roundRect(0, -3.5, 6, 7, 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(0, 0, 11, 7, 0, 0, Math.PI * 2); ctx.fill();
+    // Spots
+    ctx.fillStyle = "#1a1a1a";
+    ctx.beginPath(); ctx.ellipse(-4, -2, 5, 3.5, 0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(5, 2.5, 3.5, 2.5, -0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-2, 3, 3, 2, 0.1, 0, Math.PI * 2); ctx.fill();
+    // White belly
+    ctx.fillStyle = "#f0f0e8";
+    ctx.beginPath(); ctx.ellipse(0, 2.5, 5, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Udder
+    ctx.fillStyle = "#e8b0b0";
+    ctx.beginPath(); ctx.ellipse(2, 5, 3.5, 2, 0, 0, Math.PI * 2); ctx.fill();
+    // Teats
+    ctx.fillStyle = "#d09090";
+    for (let ti = 0; ti < 4; ti++) {
+      ctx.beginPath(); ctx.ellipse(ti * 1.5, 6.8, 0.6, 1, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // Neck + head
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(12, -2, 3, 5, -0.3, 0, Math.PI * 2); ctx.fill();
+    ctx.save(); ctx.translate(14, -5);
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.roundRect(0, -4, 8, 8, 2); ctx.fill();
+    // Snout
+    ctx.fillStyle = "#e8b0a0";
+    ctx.beginPath(); ctx.ellipse(7, 0.5, 2, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#3a1a0a";
+    ctx.beginPath(); ctx.arc(7.5, -0.5, 0.5, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(7.5, 1.5, 0.5, 0, Math.PI * 2); ctx.fill();
+    // Eye
+    ctx.fillStyle = "#1a1006";
+    ctx.beginPath(); ctx.arc(1.5, -1.5, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath(); ctx.arc(1.9, -1.8, 0.35, 0, Math.PI * 2); ctx.fill();
+    // Horn
+    ctx.fillStyle = "#d8c090";
+    ctx.beginPath(); ctx.moveTo(0, -3.5); ctx.lineTo(-1.5, -7); ctx.lineTo(1.5, -4); ctx.fill();
     ctx.restore();
+    // Tail
+    ctx.strokeStyle = dark; ctx.lineWidth = 1.5; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-10, 1); ctx.lineTo(-13, walk * 2); ctx.stroke();
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.arc(-13, walk * 2, 1.5, 0, Math.PI * 2); ctx.fill();
+
   } else if (a.kind === "boar") {
+    // BOAR — stocky, bristled
+    const lW = walk * 1.8;
+    leg(-5, 4,  lW, 4); leg(-2, 4, -lW, 4);
+    leg( 2, 4,  lW, 4); leg( 5, 4, -lW, 4);
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.ellipse(0, 0, 9, 6.5, 0, 0, Math.PI * 2); ctx.fill();
     ctx.fillStyle = color;
-    ctx.beginPath(); ctx.ellipse(0, 0, 8, 6, 0, 0, Math.PI * 2); ctx.fill();
-    // head
-    ctx.save(); ctx.translate(6, 0);
-    ctx.beginPath(); ctx.moveTo(0, -4); ctx.lineTo(6, 0); ctx.lineTo(0, 4); ctx.fill();
-    // tusks
-    ctx.strokeStyle = "#eee"; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(4, 1); ctx.lineTo(6, -1); ctx.moveTo(4, -1); ctx.lineTo(6, 1); ctx.stroke();
+    ctx.beginPath(); ctx.ellipse(-1, -1, 8, 5.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Bristles along spine
+    ctx.strokeStyle = dark; ctx.lineWidth = 0.7;
+    for (let bi = -7; bi <= 7; bi += 2) {
+      ctx.beginPath();
+      ctx.moveTo(bi, -5); ctx.lineTo(bi + 0.5, -8.5);
+      ctx.stroke();
+    }
+    // Head
+    ctx.save(); ctx.translate(8, -1.5);
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.ellipse(0, 0, 5, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(-0.5, -0.5, 4.5, 3.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Snout disk
+    ctx.fillStyle = "#8a6050";
+    ctx.beginPath(); ctx.arc(4.2, 0.5, 2.5, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#2a1a10";
+    ctx.beginPath(); ctx.arc(3.5, -0.3, 0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(5, 1.2, 0.7, 0, Math.PI * 2); ctx.fill();
+    // Tusks
+    ctx.fillStyle = "#f0e8d0";
+    ctx.beginPath(); ctx.moveTo(4, 1.5); ctx.bezierCurveTo(5, 2.5, 8, 2.5, 8, 0.5); ctx.lineTo(7, 1); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(4, -0.5); ctx.bezierCurveTo(5, -2, 8, -2, 8, -0.5); ctx.lineTo(7, -1); ctx.closePath(); ctx.fill();
+    // Eye
+    ctx.fillStyle = "#1a0808";
+    ctx.beginPath(); ctx.arc(0.5, -1.5, 0.8, 0, Math.PI * 2); ctx.fill();
     ctx.restore();
+    // Tiny tail
+    ctx.strokeStyle = color; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.moveTo(-9, 0); ctx.bezierCurveTo(-11, -1, -12, 1, -11, 3); ctx.stroke();
+
   } else if (a.kind === "dog") {
-    // Existing dog logic
-    let bodyColor = a.furColor;
-    let accentColor = shadeHex(bodyColor, -25);
-    ctx.fillStyle = bodyColor;
-    ctx.beginPath(); ctx.ellipse(0, 0, 6, 3.5, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.save(); ctx.translate(5, 0);
-    if (a.state === "bark") ctx.rotate(Math.sin(a.walkPhase * 10) * 0.2 - 0.2);
-    ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI * 2); ctx.fill();
-    ctx.fillStyle = accentColor; ctx.fillRect(1.5, -0.8, 2, 1.6);
+    // DOG — friendly, varied breeds
+    const lW = walk * 2;
+    const accent = shadeHex(color, -28);
+    const isChasing = a.state === "chase" || a.state === "attack";
+    leg(-4, 3.5,  lW, 5); leg(-1, 3.5, -lW, 5);
+    leg( 1, 3.5,  lW, 5); leg( 4, 3.5, -lW, 5);
+    // Body
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.ellipse(0, 0, 7, 4, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(-0.5, -0.8, 6, 3.2, 0, 0, Math.PI * 2); ctx.fill();
+    // Belly patch
+    ctx.fillStyle = shadeHex(color, 20);
+    ctx.beginPath(); ctx.ellipse(0, 1.2, 3, 1.8, 0, 0, Math.PI * 2); ctx.fill();
+    // Neck
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(5.5, -2, 2, 3, -0.4, 0, Math.PI * 2); ctx.fill();
+    // Head
+    ctx.save();
+    ctx.translate(7.5, -4);
+    if (a.state === "bark") ctx.rotate(Math.sin(a.walkPhase * 12) * 0.3 - 0.15);
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.arc(0, 0, 3.3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(-0.3, -0.3, 3, 0, Math.PI * 2); ctx.fill();
+    // Snout
+    ctx.fillStyle = accent;
+    ctx.beginPath(); ctx.ellipse(2.5, 0.6, 2, 1.4, 0.1, 0, Math.PI * 2); ctx.fill();
+    // Nose
+    ctx.fillStyle = "#0a0a0a";
+    ctx.beginPath(); ctx.arc(3.8, 0.3, 0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.4)";
+    ctx.beginPath(); ctx.arc(4, 0.1, 0.25, 0, Math.PI * 2); ctx.fill();
+    // Tongue (when running or barking)
+    if (isChasing || a.state === "bark") {
+      ctx.fillStyle = "#e04060";
+      ctx.beginPath();
+      ctx.moveTo(2.5, 1.5); ctx.bezierCurveTo(2, 2.5, 3, 3.5, 3.5, 1.8);
+      ctx.closePath(); ctx.fill();
+    }
+    // Eyes
+    ctx.fillStyle = "#1a0a00";
+    ctx.beginPath(); ctx.arc(-0.5, -1.2, 0.7, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath(); ctx.arc(-0.2, -1.5, 0.25, 0, Math.PI * 2); ctx.fill();
+    // Ears (floppy — drooped to side)
+    ctx.fillStyle = accent;
+    ctx.beginPath();
+    ctx.moveTo(-2, -1.5); ctx.bezierCurveTo(-4, -1, -5, 2, -3.5, 3); ctx.lineTo(-2, 1);
+    ctx.closePath(); ctx.fill();
     ctx.restore();
-    const tw = Math.sin(a.walkPhase * (a.state === "chase" ? 15 : 6)) * 2;
-    ctx.strokeStyle = bodyColor; ctx.lineWidth = 1.2;
-    ctx.beginPath(); ctx.moveTo(-5, 0); ctx.lineTo(-8, tw); ctx.stroke();
+    // Tail (wagging)
+    const tw = Math.sin(a.walkPhase * (isChasing ? 12 : 5)) * 3;
+    ctx.strokeStyle = color; ctx.lineWidth = 2; ctx.lineCap = "round";
+    ctx.beginPath(); ctx.moveTo(-6.5, -1); ctx.bezierCurveTo(-9, -1, -11, tw, -10, tw - 3); ctx.stroke();
+
   } else if (a.kind === "cat") {
-    // Existing cat logic
-    ctx.fillStyle = a.furColor;
+    // CAT — lithe, self-contained
     const isSitting = a.state === "sit";
-    if (isSitting) ctx.beginPath(); ctx.ellipse(0, 0, 4, 4, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(0, 0, 5, 2.8, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.save(); ctx.translate(isSitting ? 3 : 4, 0);
-    ctx.beginPath(); ctx.arc(0, 0, 2.2, 0, Math.PI * 2); ctx.fill();
+    const lW = isSitting ? 0 : walk * 1.8;
+    if (!isSitting) {
+      leg(-3.5, 3,  lW, 4.5); leg(-1, 3, -lW, 4.5);
+      leg( 1, 3,  lW, 4.5); leg( 3.5, 3, -lW, 4.5);
+    } else {
+      // Sitting paws
+      ctx.fillStyle = dark;
+      ctx.beginPath(); ctx.ellipse(-2, 4.5, 2, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+      ctx.beginPath(); ctx.ellipse(2, 4.5, 2, 1.2, 0, 0, Math.PI * 2); ctx.fill();
+    }
+    // Body
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.ellipse(0, isSitting ? 1 : 0, isSitting ? 4.5 : 6, isSitting ? 5 : 3.2, 0, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(-0.5, isSitting ? 0.5 : -0.5, isSitting ? 4 : 5.5, isSitting ? 4.5 : 2.8, 0, 0, Math.PI * 2); ctx.fill();
+    // Tabby stripes
+    ctx.fillStyle = dark; ctx.lineWidth = 0.8;
+    for (let si = -3; si <= 3; si++) {
+      ctx.fillStyle = `rgba(0,0,0,${0.12 + (si % 2) * 0.05})`;
+      ctx.beginPath(); ctx.ellipse(si * 1.5, 0, 0.7, 2.5, 0.1, 0, Math.PI * 2); ctx.fill();
+    }
+    // Neck
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.ellipse(isSitting ? 2 : 5, isSitting ? -3 : -2, 2, isSitting ? 3 : 2.5, isSitting ? -0.3 : -0.5, 0, Math.PI * 2); ctx.fill();
+    // Head
+    ctx.save();
+    ctx.translate(isSitting ? 4.5 : 7.5, isSitting ? -5 : -4.5);
+    ctx.fillStyle = dark;
+    ctx.beginPath(); ctx.arc(0, 0, 3, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.arc(-0.3, -0.3, 2.7, 0, Math.PI * 2); ctx.fill();
+    // Snout patch
+    ctx.fillStyle = shadeHex(color, 16);
+    ctx.beginPath(); ctx.ellipse(1.8, 0.8, 1.4, 1.2, 0.1, 0, Math.PI * 2); ctx.fill();
+    // Nose
+    ctx.fillStyle = "#d06080";
+    ctx.beginPath(); ctx.arc(2.4, 0.5, 0.5, 0, Math.PI * 2); ctx.fill();
+    // Eyes (cat's eyes — oval with slit)
+    ctx.fillStyle = "#60c870";
+    ctx.beginPath(); ctx.arc(-0.8, -1, 0.9, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(-0.95, -1.5, 0.3, 1.0);
+    ctx.fillStyle = "rgba(255,255,255,0.55)";
+    ctx.beginPath(); ctx.arc(-0.5, -1.3, 0.3, 0, Math.PI * 2); ctx.fill();
+    // Whiskers
+    ctx.strokeStyle = "rgba(255,255,255,0.7)"; ctx.lineWidth = 0.35; ctx.lineCap = "round";
+    [[1.5, 0, 5, -0.5], [1.5, 0.3, 5, 0.6], [1.5, 0.7, 5, 1.5]].forEach(([x1, y1, x2, y2]) => {
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(-x2 + 1.5, y2); ctx.stroke();
+    });
+    // Ears (pointed)
+    ctx.fillStyle = color;
+    ctx.beginPath(); ctx.moveTo(-2, -2); ctx.lineTo(-3.5, -5.5); ctx.lineTo(0, -3); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(1.5, -2); ctx.lineTo(3, -5); ctx.lineTo(3.5, -2.5); ctx.closePath(); ctx.fill();
+    ctx.fillStyle = "#e090a0";
+    ctx.beginPath(); ctx.moveTo(-1.8, -2.3); ctx.lineTo(-3, -4.5); ctx.lineTo(-0.3, -3.2); ctx.closePath(); ctx.fill();
+    ctx.beginPath(); ctx.moveTo(1.7, -2.3); ctx.lineTo(2.7, -4.2); ctx.lineTo(3.2, -2.8); ctx.closePath(); ctx.fill();
     ctx.restore();
+    // Tail (curled over body when sitting, swaying when walking)
+    ctx.strokeStyle = dark; ctx.lineWidth = 2; ctx.lineCap = "round";
+    if (isSitting) {
+      ctx.beginPath(); ctx.moveTo(-3.5, 3); ctx.bezierCurveTo(-6, 3, -7, 0, -5, -2); ctx.stroke();
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-3.5, 3); ctx.bezierCurveTo(-6, 3, -7, 0, -5, -2); ctx.stroke();
+    } else {
+      const tailSway = Math.sin(a.walkPhase * 0.7) * 3;
+      ctx.beginPath(); ctx.moveTo(-5.5, -1); ctx.bezierCurveTo(-8, -2, -10, tailSway, -9, tailSway - 4); ctx.stroke();
+      ctx.strokeStyle = color; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(-5.5, -1); ctx.bezierCurveTo(-8, -2, -10, tailSway, -9, tailSway - 4); ctx.stroke();
+    }
+
   } else {
-    // Pigeon
-    ctx.fillStyle = "#7e8a99";
-    ctx.beginPath(); ctx.ellipse(0, 0, 3.5, 2.2, 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.arc(3, 0, 1.6, 0, Math.PI * 2); ctx.fill();
-    const wf = (a.flyZ > 0.05) ? Math.sin(a.walkPhase * 2.5) * 2 : 0;
-    ctx.fillStyle = "#657080";
-    ctx.beginPath(); ctx.ellipse(-0.5, -2, 3, Math.abs(1.2 + wf), 0, 0, Math.PI * 2); ctx.fill();
-    ctx.beginPath(); ctx.ellipse(-0.5, 2, 3, Math.abs(1.2 + wf), 0, 0, Math.PI * 2); ctx.fill();
+    // PIGEON — improved
+    const wf = a.flyZ > 0.05 ? Math.sin(a.walkPhase * 3) * 2.5 : 0;
+    // Wing shadows
+    ctx.fillStyle = "rgba(0,0,0,0.12)";
+    ctx.beginPath(); ctx.ellipse(-0.5, -3, 4, Math.abs(1.5 + wf * 0.5), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-0.5, 3, 4, Math.abs(1.5 + wf * 0.5), 0, 0, Math.PI * 2); ctx.fill();
+    // Wings
+    ctx.fillStyle = "#5a6472";
+    ctx.beginPath(); ctx.ellipse(-0.5, -2.5, 4.5, Math.max(0.5, Math.abs(1.8 + wf)), 0, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.ellipse(-0.5, 2.5, 4.5, Math.max(0.5, Math.abs(1.8 + wf)), 0, 0, Math.PI * 2); ctx.fill();
+    // Wing feather detail
+    ctx.strokeStyle = "#4a5462"; ctx.lineWidth = 0.4;
+    for (let wi = 0; wi < 4; wi++) {
+      ctx.beginPath();
+      ctx.moveTo(-2 + wi * 1.2, -2.5);
+      ctx.lineTo(-2.5 + wi * 1.2, -4 - Math.abs(wf) * 0.5);
+      ctx.stroke();
+    }
+    // Body
+    ctx.fillStyle = "#8090a0";
+    ctx.beginPath(); ctx.ellipse(0, 0, 4, 2.5, 0, 0, Math.PI * 2); ctx.fill();
+    // Iridescent chest patch (green-purple sheen)
+    ctx.fillStyle = "rgba(80,160,120,0.4)";
+    ctx.beginPath(); ctx.ellipse(1.5, 0, 2, 1.5, 0.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(120,60,160,0.3)";
+    ctx.beginPath(); ctx.ellipse(1.8, 0.3, 1.5, 1, 0.1, 0, Math.PI * 2); ctx.fill();
+    // Head
+    ctx.fillStyle = "#8898a8";
+    ctx.beginPath(); ctx.arc(3.5, -0.3, 1.8, 0, Math.PI * 2); ctx.fill();
+    // Beak
+    ctx.fillStyle = "#c0a078";
+    ctx.beginPath(); ctx.moveTo(5, -0.5); ctx.lineTo(7, 0); ctx.lineTo(5, 0.5); ctx.fill();
+    // Eye
+    ctx.fillStyle = "#e04820";
+    ctx.beginPath(); ctx.arc(3.8, -0.8, 0.6, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "#0a0a0a";
+    ctx.beginPath(); ctx.arc(3.9, -0.8, 0.35, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(255,255,255,0.5)";
+    ctx.beginPath(); ctx.arc(4.0, -0.95, 0.15, 0, Math.PI * 2); ctx.fill();
+    // Walking legs
+    if (a.flyZ < 0.05) {
+      ctx.strokeStyle = "#c0a888"; ctx.lineWidth = 0.8; ctx.lineCap = "round";
+      ctx.beginPath(); ctx.moveTo(0, 2.5); ctx.lineTo(-1, 4.5 + walk); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(1, 2.5); ctx.lineTo(2, 4.5 - walk); ctx.stroke();
+    }
   }
   ctx.restore();
 }

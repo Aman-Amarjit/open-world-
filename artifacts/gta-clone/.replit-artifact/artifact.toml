@@ -1,6 +1,6 @@
 kind = "web"
-previewPath = "/"
-title = "South Island City"
+previewPath = "/gta-clone"
+title = "Blood & Chrome"
 version = "1.0.0"
 id = "artifacts/gta-clone"
 router = "path"
@@ -11,8 +11,8 @@ version = "1.0.0"
 
 [[services]]
 name = "web"
-paths = [ "/" ]
-localPort = 21056
+paths = [ "/gta-clone" ]
+localPort = 3000
 
 [services.development]
 run = "pnpm --filter @workspace/gta-clone run dev"
@@ -27,5 +27,5 @@ from = "/*"
 to = "/index.html"
 
 [services.env]
-PORT = "21056"
-BASE_PATH = "/"
+PORT = "3000"
+BASE_PATH = "/gta-clone"

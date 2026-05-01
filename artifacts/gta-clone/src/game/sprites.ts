@@ -336,25 +336,175 @@ export function drawCar(
     ctx.fillRect(0, -2.5, 3, 5);
   }
 
-  // Spoiler for sports cars
-  if (v.kind === "sports" && v.visualVariant > 0.4) {
-    ctx.fillStyle = shadeHex(bodyColor, -15);
-    ctx.fillRect(-halfL + 1, -halfW + 2, 2.5, W - 4); // main wing
-    ctx.fillStyle = shadeHex(bodyColor, -35);
-    ctx.fillRect(-halfL + 1, -halfW + 2, 0.8, 1.5); // strut L
-    ctx.fillRect(-halfL + 1, halfW - 3.5, 0.8, 1.5); // strut R
+  // ── VEHICLE TYPE SPECIFIC SHAPES ─────────────────────────────────────────
+  if (v.kind === "sports") {
+    // Sports: low roofline, hood scoop, wider rear
+    // Hood scoop (center raised intake)
+    ctx.fillStyle = shadeHex(bodyColor, -20);
+    ctx.beginPath();
+    ctx.roundRect(halfL - 14, -2, 6, 4, 1);
+    ctx.fill();
+    ctx.fillStyle = "#050505";
+    ctx.beginPath();
+    ctx.roundRect(halfL - 13, -1.2, 4, 2.4, 0.5);
+    ctx.fill();
+    // Rear diffuser strip
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(-halfL, -halfW + 2, 3, W - 4);
+    ctx.fillStyle = "rgba(180,180,180,0.4)";
+    for (let di = 0; di < 4; di++) {
+      ctx.fillRect(-halfL + 0.4, -halfW + 3 + di * 3, 2, 1.2);
+    }
+    // Spoiler (if variant)
+    if (v.visualVariant > 0.35) {
+      ctx.fillStyle = shadeHex(bodyColor, -18);
+      ctx.fillRect(-halfL + 1, -halfW + 1.5, 2.5, W - 3); // wing blade
+      ctx.fillStyle = shadeHex(bodyColor, -38);
+      ctx.fillRect(-halfL + 1.5, -halfW + 1.5, 0.7, 2); // strut L
+      ctx.fillRect(-halfL + 1.5, halfW - 3.5, 0.7, 2); // strut R
+      // Wing shadow on trunk
+      ctx.fillStyle = "rgba(0,0,0,0.2)";
+      ctx.fillRect(-halfL + 4, -halfW + 2, 5, W - 4);
+    }
+    // Side skirts (ground-hugging strips below doors)
+    ctx.fillStyle = "#080808";
+    ctx.fillRect(-halfL + 5, -halfW - 0.8, L - 10, 0.8);
+    ctx.fillRect(-halfL + 5, halfW, L - 10, 0.8);
   }
 
-  // Rust patches for trucks
-  if (v.kind === "truck" && v.visualVariant > 0.6) {
-    ctx.fillStyle = "rgba(100, 60, 20, 0.4)";
-    for (let i = 0; i < 3; i++) {
-      const rx = -halfL + (v.visualVariant * 100 + i * 20) % L;
-      const ry = -halfW + (v.visualVariant * 200 + i * 15) % W;
+  if (v.kind === "truck") {
+    // Truck: visible cab + cargo box separation
+    const cabEnd = halfL * 0.25; // cab ends at 25% from front
+    // Cargo box body (large rectangular bed)
+    ctx.fillStyle = shadeHex(bodyColor, -12);
+    ctx.beginPath();
+    ctx.roundRect(-halfL, -halfW + 1, L - cabEnd * 2 - 2, W - 2, 1);
+    ctx.fill();
+    // Cargo box walls / ribbing
+    ctx.strokeStyle = shadeHex(bodyColor, -30);
+    ctx.lineWidth = 0.8;
+    const ribCount = 5;
+    for (let ri = 1; ri < ribCount; ri++) {
+      const rx = -halfL + (L - cabEnd * 2 - 2) * ri / ribCount;
       ctx.beginPath();
-      ctx.arc(rx, ry, 2, 0, Math.PI * 2);
-      ctx.fill();
+      ctx.moveTo(rx, -halfW + 1);
+      ctx.lineTo(rx, halfW - 1);
+      ctx.stroke();
     }
+    // Cargo box top highlights
+    ctx.strokeStyle = "rgba(255,255,255,0.12)";
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(-halfL + 2, -halfW + 1.5);
+    ctx.lineTo(-halfL + (L - cabEnd * 2) - 2, -halfW + 1.5);
+    ctx.stroke();
+    // Step rails under cab
+    ctx.fillStyle = "#1a1a1a";
+    ctx.fillRect(halfL * 0.05, -halfW - 1, cabEnd * 1.2, 1);
+    ctx.fillRect(halfL * 0.05, halfW, cabEnd * 1.2, 1);
+    ctx.fillStyle = "rgba(200,200,200,0.5)";
+    ctx.fillRect(halfL * 0.05, -halfW - 0.8, cabEnd * 1.2, 0.4);
+    // Rust patches (aged trucks)
+    if (v.visualVariant > 0.55) {
+      ctx.fillStyle = "rgba(100,55,15,0.45)";
+      for (let ri = 0; ri < 4; ri++) {
+        const rx = -halfL + 3 + ((v.visualVariant * 100 + ri * 23) % (L - 15));
+        const ry = -halfW + 1 + ((v.visualVariant * 200 + ri * 17) % (W - 2));
+        ctx.beginPath();
+        ctx.arc(rx, ry, 2 + (ri % 2), 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+
+  if (v.kind === "bus") {
+    // Bus: rows of passenger windows, striping
+    // Window strip
+    ctx.fillStyle = "rgba(140,190,230,0.55)";
+    ctx.fillRect(-halfL + 4, -halfW + 1.5, L - 12, halfW * 0.8);
+    // Window dividers
+    ctx.strokeStyle = bodyColor; ctx.lineWidth = 0.8;
+    const winCount = Math.floor(L / 10);
+    for (let wi = 1; wi < winCount; wi++) {
+      const wx = -halfL + 4 + (L - 12) * wi / winCount;
+      ctx.beginPath();
+      ctx.moveTo(wx, -halfW + 1.5);
+      ctx.lineTo(wx, halfW * 0.8 - halfW + 1.5);
+      ctx.stroke();
+    }
+    // Destination sign panel
+    ctx.fillStyle = "#101820";
+    ctx.fillRect(halfL - 10, -halfW + 1.5, 6, halfW * 0.4);
+    ctx.fillStyle = "#f0e860";
+    ctx.fillRect(halfL - 9.5, -halfW + 2, 5, halfW * 0.3);
+    // Side stripe
+    ctx.fillStyle = shadeHex(bodyColor, -30);
+    ctx.fillRect(-halfL + 4, halfW * 0.35, L - 12, 1.5);
+  }
+
+  if (v.kind === "suv") {
+    // SUV: taller boxy roofline indication, roof rack, running boards
+    // Roof rack bars
+    ctx.fillStyle = "#3a3a3a";
+    ctx.fillRect(-halfL + 6, -halfW + 1.5, L - 14, 0.7); // front bar
+    ctx.fillRect(-halfL + 6, halfW - 2.2, L - 14, 0.7);  // rear bar
+    // Rack crossbars
+    const rackSections = 3;
+    for (let ri = 0; ri <= rackSections; ri++) {
+      const rx = -halfL + 6 + (L - 14) * ri / rackSections;
+      ctx.fillRect(rx - 0.3, -halfW + 1.5, 0.6, W - 3.7);
+    }
+    // Running boards
+    ctx.fillStyle = "#2a2a2a";
+    ctx.fillRect(-halfL + 5, -halfW - 1.2, L - 10, 1.2);
+    ctx.fillRect(-halfL + 5, halfW, L - 10, 1.2);
+    ctx.fillStyle = "rgba(200,200,200,0.25)";
+    ctx.fillRect(-halfL + 5, -halfW - 0.7, L - 10, 0.4);
+    ctx.fillRect(-halfL + 5, halfW + 0.5, L - 10, 0.4);
+  }
+
+  if (v.kind === "taxi") {
+    // Taxi: roof light, door markings
+    // Roof taxi sign
+    ctx.fillStyle = "#f0d820";
+    ctx.fillRect(-2.5, -halfW - 2, 5, 2);
+    ctx.fillStyle = "#0a0a0a";
+    ctx.fillRect(-1.5, -halfW - 1.8, 3, 1.6);
+    ctx.fillStyle = "#f0d820";
+    ctx.fillRect(-1.2, -halfW - 1.5, 2.4, 1);
+    // Checkered door stripe
+    for (let ci = 0; ci < 6; ci++) {
+      ctx.fillStyle = (ci % 2) === 0 ? "#1a1a1a" : bodyColor;
+      ctx.fillRect(-halfL + 5 + ci * 2, -halfW + 0.5, 2, W - 1);
+    }
+  }
+
+  if (v.kind === "motorcycle") {
+    // Motorcycle: narrow single-track, rider visible
+    // Fuel tank (center)
+    ctx.fillStyle = shadeHex(bodyColor, 10);
+    ctx.beginPath(); ctx.roundRect(-2, -halfW + 1, 8, W - 2, 2); ctx.fill();
+    ctx.fillStyle = bodyColor;
+    ctx.beginPath(); ctx.roundRect(-1, -halfW + 1.5, 6, W - 3, 1.5); ctx.fill();
+    // Engine block (chrome/dark)
+    ctx.fillStyle = "#303030";
+    ctx.beginPath(); ctx.roundRect(-4, -halfW + 2, 5, W - 4, 1); ctx.fill();
+    ctx.fillStyle = "#606060";
+    ctx.fillRect(-3.5, -halfW + 2.5, 4, W - 5);
+    // Exhaust pipe
+    ctx.strokeStyle = "#808080"; ctx.lineWidth = 1.5; ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-halfL + 2, halfW - 1.5);
+    ctx.bezierCurveTo(-halfL - 2, halfW, -halfL - 2, halfW + 1, -halfL - 1, halfW);
+    ctx.stroke();
+    // Front forks
+    ctx.strokeStyle = "#707878"; ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    ctx.moveTo(halfL - 3, -halfW + 1);
+    ctx.lineTo(halfL + 2, -halfW - 0.5);
+    ctx.moveTo(halfL - 3, halfW - 1);
+    ctx.lineTo(halfL + 2, halfW + 0.5);
+    ctx.stroke();
   }
 
   // Damage overlay
@@ -469,8 +619,19 @@ export function drawHuman(ctx: CanvasRenderingContext2D, h: Human) {
   const legSwing = moving ? Math.sin(phase) * 1.6 : 0;
   const armSwing = moving ? Math.sin(phase) * 1.4 : 0;
 
-  const skinColor = "#d4a378";
-  const skinDark = shadeHex(skinColor, -25);
+  // Deterministic skin tone diversity based on NPC id
+  const skinPalette = [
+    "#d4a378", // light warm
+    "#c08850", // medium tan
+    "#8a5c2e", // brown
+    "#5c3018", // dark brown
+    "#e8c89a", // pale
+    "#b07840", // olive-tan
+    "#7a4020", // deep brown
+    "#d0a060", // golden tan
+  ];
+  const skinColor = skinPalette[h.id % skinPalette.length];
+  const skinDark = shadeHex(skinColor, -28);
   const shirtDark = shadeHex(h.shirtColor, -28);
   const shirtLight = shadeHex(h.shirtColor, 18);
   const pantsDark = shadeHex(h.pantsColor, -25);
