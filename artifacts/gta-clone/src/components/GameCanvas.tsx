@@ -6,6 +6,7 @@ import { setupInput } from "@/game/input";
 import { audioEngine } from "@/game/audio";
 import { HUD } from "./HUD";
 import { TitleOverlay } from "./TitleOverlay";
+import { Cutscene } from "./Cutscene";
 
 export function GameCanvas() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -173,6 +174,57 @@ export function GameCanvas() {
       <div className="scanlines" />
       {gameRef.current && started && (
         <HUD state={gameRef.current.state} world={gameRef.current.world} />
+      )}
+      {gameRef.current?.state.story.cutscene && started && (
+        <Cutscene
+          cutscene={gameRef.current.state.story.cutscene}
+          actBanner=""
+          actBannerTimer={0}
+        />
+      )}
+      {/* Act banner — shown between missions when the act changes */}
+      {gameRef.current && started && gameRef.current.state.story.actBannerTimer > 0 && !gameRef.current.state.story.cutscene && (
+        <div style={{
+          position: "fixed",
+          top: "50%",
+          left: 0,
+          right: 0,
+          transform: "translateY(-50%)",
+          display: "flex",
+          flexDirection: "column",
+          alignItems: "center",
+          justifyContent: "center",
+          zIndex: 110,
+          pointerEvents: "none",
+        }}>
+          <div style={{
+            background: "rgba(0,0,0,0.75)",
+            padding: "16px 48px",
+            borderTop: "2px solid #e8b820",
+            borderBottom: "2px solid #e8b820",
+            textAlign: "center",
+          }}>
+            <div style={{
+              fontFamily: "'Impact', 'Arial Black', sans-serif",
+              fontSize: "clamp(22px, 4vw, 48px)",
+              color: "#e8b820",
+              letterSpacing: "0.3em",
+              textShadow: "0 2px 20px rgba(232,184,32,0.5)",
+            }}>
+              BLOOD &amp; CHROME
+            </div>
+            <div style={{
+              fontFamily: "'Impact', 'Arial Black', sans-serif",
+              fontSize: "clamp(16px, 2.5vw, 28px)",
+              color: "#ffffff",
+              letterSpacing: "0.2em",
+              marginTop: 6,
+              textShadow: "0 1px 8px rgba(0,0,0,0.9)",
+            }}>
+              {gameRef.current.state.story.actBanner}
+            </div>
+          </div>
+        </div>
       )}
       {!started && <TitleOverlay onStart={handleStart} />}
       {gameRef.current?.state.paused && started && (

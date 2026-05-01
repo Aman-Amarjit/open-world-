@@ -37,6 +37,7 @@ import {
 import { updateHumanAI, fireBullet, bustPlayer } from "./ai";
 import { clamp, dist, distSq, angleTo, lerpAngle, pick, rand, newId } from "./utils";
 import { enterInterior, updateInterior } from "./interior";
+import { STORY_MISSIONS, ACT_INTROS } from "./story";
 
 const TARGET_VEHICLES = 16;
 const TARGET_PEDS = 40;
@@ -85,6 +86,7 @@ export function createGame(seed = 42): Game {
       mouseDown: false,
       nearbyShopId: null,
       weaponWheelOpen: false,
+      dialogueAdvance: false,
     },
     weather: "clear",
     timeOfDay: "day",
@@ -114,6 +116,16 @@ export function createGame(seed = 42): Game {
     activeMission: null,
     missionsCompleted: 0,
     missionSpawnTimer: 6,
+    story: {
+      enabled: true,
+      missionIdx: 0,
+      markerSpawned: false,
+      nextMissionTimer: 3,
+      cutscene: null,
+      complete: false,
+      actBanner: "",
+      actBannerTimer: 0,
+    },
     trafficPhase: 0,
     trafficPhaseTimer: 0,
     lastKnownPlayerPos: null,
@@ -311,6 +323,9 @@ export function tick(game: Game, dt: number) {
   // Pickup collection
   collectPickups(state);
 
+  // Story campaign: dialogue advance + mission chaining
+  tickStory(state, world, dt);
+
   // Missions: spawn / progress / complete
   tickMissions(state, world, dt);
 
@@ -467,6 +482,12 @@ export function tick(game: Game, dt: number) {
         // Strip ammo down so the player can't immediately re-aggro
         state.player.ammo = 0;
         state.player.weapon = "fist";
+      }
+      // Cancel any active mission (story or random) on death/arrest
+      if (state.activeMission) {
+        failMission(state, state.activeMission.storyId
+          ? `${state.activeMission.name} FAILED — Respawn and try again`
+          : `${state.activeMission.name} FAILED`);
       }
       // Respawn at the player's claimed safehouse (initial spawn point at game start).
       // Falls back to a fresh road tile if for some reason we have no spawn point.
@@ -1766,6 +1787,168 @@ function spawnRoadblock(state: GameState, world: WorldData) {
 //   eliminate   — take out a specific gang member
 //   escape      — survive a wanted-level chase for X seconds
 // Completing a mission pays cash + score and bumps the lifetime counter.
+// ─────────────────────────────────────────────────────────────────────────────
+// STORY SYSTEM
+// ─────────────────────────────────────────────────────────────────────────────
+
+function tickStory(state: GameState, world: WorldData, dt: number) {
+  const story = state.story;
+  if (!story.enabled || story.complete) return;
+
+  // Tick act-banner timer
+  if (story.actBannerTimer > 0) story.actBannerTimer -= dt;
+
+  // ---- CUTSCENE: handle dialogue advance ----
+  if (story.cutscene !== null) {
+    // Block normal player input during cutscene
+    state.input.up = false;
+    state.input.down = false;
+    state.input.left = false;
+    state.input.right = false;
+    state.input.fire = false;
+
+    // Consume dialogueAdvance
+    if (state.input.dialogueAdvance) {
+      state.input.dialogueAdvance = false;
+      const cs = story.cutscene;
+      cs.index += 1;
+
+      if (cs.index >= cs.lines.length) {
+        // All lines shown — execute action
+        const action = cs.onComplete;
+        story.cutscene = null;
+
+        if (action === "start_mission") {
+          // Activate the story mission that's waiting in missions[]
+          const sm = state.missions.find((m) => m.storyId === STORY_MISSIONS[cs.missionIdx]?.id);
+          if (sm) {
+            state.missions.splice(state.missions.indexOf(sm), 1);
+            activateMission(state, world, sm);
+          }
+        } else if (action === "advance_story") {
+          // Give rewards from completed mission def
+          const def = STORY_MISSIONS[cs.missionIdx];
+          if (def) {
+            state.money += def.reward;
+            if (def.reward > 0) addScore(state, def.scoreReward);
+            if (def.giveWeapon) {
+              state.player.weapon = def.giveWeapon;
+              state.player.ammo = Math.max(state.player.ammo, def.giveAmmo ?? 80);
+            } else if (def.giveAmmo) {
+              state.player.ammo = Math.min(999, state.player.ammo + def.giveAmmo);
+            }
+            if (def.reward > 0) {
+              state.notifications.push({ text: `MISSION COMPLETE +$${def.reward}`, life: 3, color: "#30c870" });
+            }
+          }
+          story.missionIdx += 1;
+          story.markerSpawned = false;
+          story.nextMissionTimer = 5;
+
+          // Check act change
+          const nextDef = STORY_MISSIONS[story.missionIdx];
+          if (nextDef) {
+            const prevDef = STORY_MISSIONS[story.missionIdx - 1];
+            if (prevDef && nextDef.act !== prevDef.act) {
+              story.actBanner = ACT_INTROS[nextDef.act] ?? "";
+              story.actBannerTimer = 4;
+            }
+          }
+
+          if (story.missionIdx >= STORY_MISSIONS.length) {
+            story.complete = true;
+            state.notifications.push({ text: "🏆 BLOOD & CHROME — COMPLETE!", life: 6, color: "#ffd700" });
+          }
+        } else if (action === "end_game") {
+          story.complete = true;
+          state.notifications.push({ text: "🏆 BLOOD & CHROME — COMPLETE!", life: 6, color: "#ffd700" });
+        }
+      }
+    } else {
+      // Reset the flag each frame (it's edge-triggered)
+      state.input.dialogueAdvance = false;
+    }
+    return; // Skip marker spawning while in cutscene
+  }
+
+  // Reset dialogueAdvance when no cutscene
+  state.input.dialogueAdvance = false;
+
+  // ---- MARKER SPAWNING ----
+  // Spawn the current story mission marker if there's no active mission and timer expired
+  if (
+    !story.markerSpawned &&
+    story.nextMissionTimer <= 0 &&
+    !state.activeMission
+  ) {
+    story.nextMissionTimer -= dt;
+    const def = STORY_MISSIONS[story.missionIdx];
+    if (def) {
+      // Snap position to nearest road node
+      const snapped = findNearestRoad(world, def.markerX, def.markerY);
+      const m: import("./types").Mission = {
+        id: `story_${def.id}`,
+        name: def.name,
+        description: def.description,
+        reward: 0, // reward given in outro, not completeMission
+        scoreReward: 0,
+        targetX: snapped.x,
+        targetY: snapped.y,
+        state: "available",
+        type: def.type,
+        timeLimit: def.timeLimit,
+        remainingTime: def.timeLimit,
+        markerColor: def.markerColor,
+        icon: def.icon,
+        storyId: def.id,
+      };
+      state.missions.push(m);
+      story.markerSpawned = true;
+
+      // Show act intro banner on first mission of each act
+      if (def.act !== (STORY_MISSIONS[story.missionIdx - 1]?.act ?? 0)) {
+        story.actBanner = ACT_INTROS[def.act] ?? "";
+        story.actBannerTimer = 4;
+      }
+    }
+  } else {
+    story.nextMissionTimer -= dt;
+  }
+}
+
+// Called when a story mission marker is stepped on — begins intro cutscene
+function activateStoryCutscene(
+  state: GameState,
+  world: WorldData,
+  m: import("./types").Mission,
+  missionIdx: number,
+) {
+  const def = STORY_MISSIONS[missionIdx];
+  if (!def) return;
+  state.story.cutscene = {
+    lines: def.intro,
+    index: 0,
+    phase: "intro",
+    missionIdx,
+    onComplete: "start_mission",
+  };
+  // Keep the mission in state.missions so activateMission can find it
+  if (!state.missions.includes(m)) state.missions.push(m);
+}
+
+// Called when a story mission completes — triggers outro cutscene
+function beginStoryOutro(state: GameState, missionIdx: number) {
+  const def = STORY_MISSIONS[missionIdx];
+  if (!def) return;
+  state.story.cutscene = {
+    lines: def.outro,
+    index: 0,
+    phase: "outro",
+    missionIdx,
+    onComplete: missionIdx >= STORY_MISSIONS.length - 1 ? "end_game" : "advance_story",
+  };
+}
+
 function tickMissions(state: GameState, world: WorldData, dt: number) {
   // Clear stale "available" markers if their target entity vanished
   for (let i = state.missions.length - 1; i >= 0; i--) {
@@ -1803,20 +1986,29 @@ function tickMissions(state: GameState, world: WorldData, dt: number) {
   }
 
   // Activate available missions when player walks over their marker (on foot or in car)
-  if (!state.activeMission) {
+  if (!state.activeMission && !state.story.cutscene) {
     const px = state.player.x;
     const py = state.player.y;
     for (let i = state.missions.length - 1; i >= 0; i--) {
       const m = state.missions[i]!;
       if (distSq(px, py, m.targetX, m.targetY) < 22 * 22) {
+        // Story missions trigger intro cutscene instead of activating directly
+        if (m.storyId) {
+          const idx = STORY_MISSIONS.findIndex((d) => d.id === m.storyId);
+          if (idx >= 0 && !state.story.cutscene) {
+            activateStoryCutscene(state, world, m, idx);
+            break;
+          }
+        }
         state.missions.splice(i, 1);
         activateMission(state, world, m);
         break;
       }
     }
   } else {
-    // Active mission progress
+    // Active mission progress (may be null during a cutscene)
     const m = state.activeMission;
+    if (!m) return;
     if (m.type === "reach" || m.type === "collect") {
       if (
         distSq(state.player.x, state.player.y, m.targetX, m.targetY) <
@@ -1982,24 +2174,65 @@ function generateMission(state: GameState, world: WorldData): Mission | null {
 
 function activateMission(state: GameState, world: WorldData, m: Mission) {
   m.state = "active";
-  // For reach/collect, re-pick a destination far from the marker so the player
-  // actually has to travel.
+
+  // Story missions have fixed destinations; random missions use re-picked nodes
+  const isStory = !!m.storyId;
+  const storyDef = isStory ? STORY_MISSIONS.find((d) => d.id === m.storyId) : undefined;
+
   if (m.type === "reach" || m.type === "collect") {
-    const candidates = world.roadGraph.filter((n) => {
-      const d = Math.hypot(n.x - state.player.x, n.y - state.player.y);
-      return d > 500 && d < 1100;
-    });
-    if (candidates.length > 0) {
-      const dest = pick(candidates);
-      m.targetX = dest.x;
-      m.targetY = dest.y;
+    if (isStory && storyDef) {
+      // Use the story's fixed marker position as the destination
+      const snapped = findNearestRoad(world, storyDef.markerX, storyDef.markerY);
+      m.targetX = snapped.x;
+      m.targetY = snapped.y;
+    } else {
+      // Random mission: re-pick a destination far from player
+      const candidates = world.roadGraph.filter((n) => {
+        const d = Math.hypot(n.x - state.player.x, n.y - state.player.y);
+        return d > 500 && d < 1100;
+      });
+      if (candidates.length > 0) {
+        const dest = pick(candidates);
+        m.targetX = dest.x;
+        m.targetY = dest.y;
+      }
     }
   }
   if (m.type === "escape") {
-    // Force a wanted star so the chase actually happens
-    raiseWanted(state, 2);
+    const wantedLevel = storyDef?.wantedOnStart ?? 2;
+    raiseWanted(state, wantedLevel);
     m.remainingTime = m.timeLimit ?? 60;
   }
+  if (m.type === "eliminate" && isStory && storyDef) {
+    // Spawn a named target enemy at the story position
+    const tpos = findNearestRoad(world, storyDef.markerX, storyDef.markerY);
+    const target = createHuman("gang", tpos.x + rand(-30, 30), tpos.y + rand(-30, 30));
+    target.weapon = "smg";
+    target.ammo = 120;
+    target.hp = 110;
+    target.maxHp = 110;
+    state.humans.push(target);
+    m.targetId = target.id;
+    m.targetX = target.x;
+    m.targetY = target.y;
+  }
+  if (m.type === "destroy" && isStory && storyDef) {
+    // Spawn a target vehicle at the story position if none nearby
+    const tpos = findNearestRoad(world, storyDef.markerX, storyDef.markerY);
+    const nearby = state.vehicles.filter(
+      (v) => v.kind !== "police" && !v.driver?.isPlayer &&
+             Math.hypot(v.x - tpos.x, v.y - tpos.y) < 400,
+    );
+    const target = nearby[0] ?? (() => {
+      const v = createVehicle("sedan", tpos.x + rand(-60, 60), tpos.y + rand(-60, 60));
+      state.vehicles.push(v);
+      return v;
+    })();
+    m.targetId = target.id;
+    m.targetX = target.x;
+    m.targetY = target.y;
+  }
+
   state.activeMission = m;
   state.notifications.push({
     text: `${m.name} STARTED`,
@@ -2014,6 +2247,20 @@ function completeMission(state: GameState) {
   if (!m) return;
   state.activeMission = null;
   state.missionsCompleted += 1;
+  audioEngine.playPickup();
+
+  // Story missions — trigger outro cutscene; rewards are given after outro
+  if (m.storyId) {
+    const idx = STORY_MISSIONS.findIndex((d) => d.id === m.storyId);
+    if (idx >= 0) {
+      // For act3_m1 (The Setup) — no money notification, just dramatic outro
+      beginStoryOutro(state, idx);
+      state.missionSpawnTimer = 12; // longer gap; story will control the next spawn
+      return;
+    }
+  }
+
+  // Regular missions
   state.money += m.reward;
   addScore(state, m.scoreReward);
   state.notifications.push({
@@ -2021,12 +2268,11 @@ function completeMission(state: GameState) {
     life: 3,
     color: "#30c870",
   });
-  audioEngine.playPickup();
-  // Brief gap before next mission marker spawns
   state.missionSpawnTimer = 5;
 }
 
 function failMission(state: GameState, msg: string) {
+  const m = state.activeMission;
   state.activeMission = null;
   state.notifications.push({
     text: msg,
@@ -2034,6 +2280,17 @@ function failMission(state: GameState, msg: string) {
     color: "#ff4060",
   });
   state.missionSpawnTimer = 8;
+
+  // If this was a story mission, allow it to be retried by resetting the marker flag
+  if (m?.storyId) {
+    state.story.markerSpawned = false;
+    state.story.nextMissionTimer = 8; // short delay before retry marker appears
+    state.notifications.push({
+      text: "MISSION FAILED — Try again when ready",
+      life: 4,
+      color: "#ff9030",
+    });
+  }
 }
 
 function updateMusicMood(state: GameState) {

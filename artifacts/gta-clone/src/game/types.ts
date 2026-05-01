@@ -282,6 +282,47 @@ export interface Mission {
   // Visual
   markerColor: string;
   icon: string;
+  // Story campaign tag
+  storyId?: string;
+}
+
+// ---- STORY / CUTSCENE SYSTEM ----
+export interface DialogueLine {
+  speaker: string;
+  role: string;
+  color: string;
+  text: string;
+  side: "left" | "right";
+}
+
+export interface StoryCutscene {
+  lines: DialogueLine[];
+  index: number;
+  phase: "intro" | "outro";
+  missionIdx: number;
+  // What to do when all lines are shown:
+  //   "start_mission" — activate the story mission normally
+  //   "advance_story" — mark complete, start timer for next mission
+  //   "end_game"     — show story complete screen
+  onComplete: "start_mission" | "advance_story" | "end_game";
+}
+
+export interface StoryProgress {
+  // Whether the story campaign is active
+  enabled: boolean;
+  // Index into STORY_MISSIONS (0-20). -1 = not started
+  missionIdx: number;
+  // Whether the current mission's marker is already on the map
+  markerSpawned: boolean;
+  // Countdown before placing the next mission marker (after outro)
+  nextMissionTimer: number;
+  // Active dialogue/cutscene; null when no cutscene
+  cutscene: StoryCutscene | null;
+  // True after final mission complete
+  complete: boolean;
+  // Act banner to show (set briefly when act changes)
+  actBanner: string;
+  actBannerTimer: number;
 }
 
 export interface Camera {
@@ -313,6 +354,8 @@ export interface Input {
   // Set each tick by updateShops when player is standing at a shop door.
   nearbyShopId: number | null;
   weaponWheelOpen: boolean;
+  // Set true for one frame when Space or E is pressed — consumed by story cutscene system
+  dialogueAdvance: boolean;
 }
 
 export interface GameState {
@@ -381,6 +424,8 @@ export interface GameState {
   missionsCompleted: number;
   // Cooldown before next mission spawns once map is empty.
   missionSpawnTimer: number;
+  // ---- STORY CAMPAIGN ----
+  story: StoryProgress;
   // ---- TRAFFIC SIGNALS ----
   // City-wide synchronized signal. `trafficPhase` cycles 0 → 1 every
   // TRAFFIC_CYCLE seconds (with a brief yellow window at end of each phase):

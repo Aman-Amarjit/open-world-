@@ -31,10 +31,12 @@ See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and pa
 ### `artifacts/gta-clone` — South Island City
 A top-down 2D crime/driving game in the spirit of GTA1. Pure Canvas 2D — every sprite is bezier-path drawn (no images, no 3D). React + Vite + TypeScript. Served at `/` (root).
 
-Game systems: procedural city world, AI pedestrians/police/gangs, physics engine, Web Audio synthesized music, mission system, enterable shop interiors, day/night cycle, weather system, weapon wheel, fistfighting. 
+Game systems: procedural city world, AI pedestrians/police/gangs, physics engine, Web Audio synthesized music, mission system, enterable shop interiors, day/night cycle, weather system, weapon wheel, fistfighting, **story campaign (Blood & Chrome)**.
 
-Key game files in `src/game/`: `world.ts`, `render.ts`, `physics.ts`, `ai.ts`, `audio.ts`, `game.ts`, `sprites.ts`, `input.ts`, `interior.ts`, `types.ts`, `factory.ts`, `utils.ts`.
-UI: `src/components/GameCanvas.tsx`, `src/components/HUD.tsx`, `src/components/TitleOverlay.tsx`.
+**Blood & Chrome** — 3-hour story campaign: 21 missions across 5 acts. Characters: Marcus Cole (player), Vinnie Deluca (mob boss), Tanya Reyes (arms dealer), Captain Rodriguez (corrupt cop), King Briggs (gang leader), The Broker (antagonist). Dialogue/cutscene system with typewriter text, letterbox bars, speaker portraits, and Space/E to advance.
+
+Key game files in `src/game/`: `world.ts`, `render.ts`, `physics.ts`, `ai.ts`, `audio.ts`, `game.ts`, `sprites.ts`, `input.ts`, `interior.ts`, `types.ts`, `factory.ts`, `utils.ts`, `story.ts` (story campaign data).
+UI: `src/components/GameCanvas.tsx`, `src/components/HUD.tsx`, `src/components/TitleOverlay.tsx`, `src/components/Cutscene.tsx` (dialogue overlay).
 
 ### `artifacts/api-server` — API Server
 Express 5 backend served at `/api`. Currently has only a health check endpoint (`/api/healthz`). The game doesn't require a backend (all game state is client-side).

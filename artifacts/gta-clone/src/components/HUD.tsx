@@ -1,5 +1,6 @@
 import type { GameState, WeaponKind } from "@/game/types";
 import type { WorldData, ShopKind } from "@/game/world";
+import { STORY_MISSIONS, ACT_INTROS } from "@/game/story";
 
 interface Props {
   state: GameState;
@@ -68,8 +69,48 @@ export function HUD({ state, world }: Props) {
         <div className="hud-combo">x{state.combo} COMBO</div>
       )}
 
+      {/* Story campaign progress badge */}
+      {state.story.enabled && !state.story.complete && (
+        <div style={{
+          marginBottom: 8,
+          background: "rgba(0,0,0,0.65)",
+          border: "1px solid rgba(232,184,32,0.4)",
+          borderRadius: 6,
+          padding: "6px 10px",
+          fontSize: 11,
+          fontFamily: "monospace",
+          letterSpacing: "0.12em",
+        }}>
+          <div style={{ color: "#e8b820", fontWeight: 700, marginBottom: 2 }}>
+            BLOOD &amp; CHROME
+          </div>
+          <div style={{ color: "#aaaaaa" }}>
+            {state.story.complete
+              ? "✓ COMPLETE"
+              : state.story.missionIdx < STORY_MISSIONS.length
+              ? `${ACT_INTROS[STORY_MISSIONS[state.story.missionIdx]?.act ?? 1] ?? ""} • M${state.story.missionIdx + 1} / ${STORY_MISSIONS.length}`
+              : "COMPLETE"}
+          </div>
+        </div>
+      )}
+      {state.story.complete && (
+        <div style={{
+          marginBottom: 8,
+          background: "rgba(0,0,0,0.65)",
+          border: "1px solid rgba(255,215,0,0.6)",
+          borderRadius: 6,
+          padding: "6px 10px",
+          fontSize: 11,
+          fontFamily: "monospace",
+          letterSpacing: "0.12em",
+          color: "#ffd700",
+        }}>
+          🏆 BLOOD &amp; CHROME — COMPLETE
+        </div>
+      )}
+
       {/* Active mission tracker */}
-      {state.activeMission && (
+      {state.activeMission && !state.story.cutscene && (
         <div
           className="hud-mission"
           style={{ borderColor: state.activeMission.markerColor }}
@@ -78,7 +119,7 @@ export function HUD({ state, world }: Props) {
             className="hud-mission-tag"
             style={{ color: state.activeMission.markerColor }}
           >
-            ACTIVE MISSION
+            {state.activeMission.storyId ? "STORY MISSION" : "ACTIVE MISSION"}
           </div>
           <div className="hud-mission-name">{state.activeMission.name}</div>
           <div className="hud-mission-desc">{state.activeMission.description}</div>

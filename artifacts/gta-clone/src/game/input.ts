@@ -28,9 +28,11 @@ export function setupInput(state: GameState, canvas: HTMLCanvasElement) {
       case "KeyE":
       case "KeyF":
         inp.enter = true;
+        inp.dialogueAdvance = true;
         break;
       case "Space":
         inp.fire = true;
+        inp.dialogueAdvance = true;
         break;
       case "ShiftLeft":
       case "ShiftRight":
