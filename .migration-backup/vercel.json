@@ -1,5 +1,0 @@
-{
-  "buildCommand": "pnpm -C artifacts/gta-clone build",
-  "outputDirectory": "public",
-  "installCommand": "pnpm install"
-}

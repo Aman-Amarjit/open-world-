@@ -30,37 +30,39 @@ export function HUD({ state, world }: Props) {
 
   return (
     <div className="hud">
-      {/* Top bar */}
-      <div className="hud-top">
-        <div className="hud-card">
-          <div className="hud-label">SCORE</div>
-          <div className="hud-value" data-testid="hud-score">
-            {Math.floor(state.score).toLocaleString()}
+      {/* Consolidated Top Header */}
+      <div className="hud-header">
+        <div className="hud-header-left">
+          <div className="hud-stat score">
+            <span className="stat-label">SCORE</span>
+            <span className="stat-value">{Math.floor(state.score).toLocaleString()}</span>
+          </div>
+          <div className="hud-stat cash">
+            <span className="stat-label">CASH</span>
+            <span className="stat-value money">${Math.floor(state.money).toLocaleString()}</span>
           </div>
         </div>
-        <div className="hud-card">
-          <div className="hud-label">CASH</div>
-          <div className="hud-value money" data-testid="hud-money">
-            ${Math.floor(state.money).toLocaleString()}
+        
+        <div className="hud-header-right">
+          <div className="hud-stat-group">
+            <div className="hud-mini-stat">
+              <span className="mini-label">TIME</span>
+              <span className="mini-value">{timeStr}</span>
+            </div>
+            <div className="hud-mini-stat">
+              <span className="mini-label">WEATHER</span>
+              <span className="mini-value">{state.weather.toUpperCase()}</span>
+            </div>
+          </div>
+          
+          <div className="hud-wanted-stars">
+            {stars.map((on, i) => (
+              <span key={i} className={`star ${on ? "on" : ""}`}>
+                ★
+              </span>
+            ))}
           </div>
         </div>
-        <div className="hud-card">
-          <div className="hud-label">TIME</div>
-          <div className="hud-value">{timeStr}</div>
-        </div>
-        <div className="hud-card">
-          <div className="hud-label">WEATHER</div>
-          <div className="hud-value">{state.weather.toUpperCase()}</div>
-        </div>
-      </div>
-
-      {/* Wanted stars */}
-      <div className="hud-wanted">
-        {stars.map((on, i) => (
-          <span key={i} className={`star ${on ? "on" : ""}`}>
-            ★
-          </span>
-        ))}
       </div>
 
       {/* Combo */}
@@ -503,14 +505,11 @@ export function HUD({ state, world }: Props) {
         );
       })()}
 
-      {/* Controls hint */}
-      <div className="hud-controls">
-        <span>WASD move</span>
-        <span>E enter/exit</span>
-        <span>Q weapon wheel</span>
-        <span>Space/Click fire</span>
-        <span>Shift sprint / handbrake</span>
-        <span>P pause</span>
+      {/* Controls hint - repositioned to bottom center */}
+      <div className="hud-controls-hint">
+        <div className="hint-pill">
+          <kbd>WASD</kbd> MOVE · <kbd>E</kbd> ENTER · <kbd>SPACE</kbd> FIRE · <kbd>SHIFT</kbd> SPRINT · <kbd>Q</kbd> WEAPON
+        </div>
       </div>
 
       {/* Gun Shop Menu Overlay */}

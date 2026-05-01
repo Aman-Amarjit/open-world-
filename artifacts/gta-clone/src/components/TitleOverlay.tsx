@@ -24,7 +24,10 @@ export function TitleOverlay({ onStart }: Props) {
         >
           ENTER THE CITY
         </button>
-        <p className="title-foot">No injuries are real. Drive responsibly in real life.</p>
+        <p className="title-foot">
+          Developed by <strong>Aman Amarjit</strong><br/>
+          No injuries are real. Drive responsibly in real life.
+        </p>
       </div>
     </div>
   );

@@ -13,6 +13,14 @@ export function GameCanvas() {
   const gameRef = useRef<Game | null>(null);
   const [, setTick] = useState(0);
   const [started, setStarted] = useState(false);
+  const [sdk, setSdk] = useState<any>(null);
+
+  useEffect(() => {
+    if (window.CrazyGames) {
+      const cgSdk = window.CrazyGames.SDK;
+      setSdk(cgSdk);
+    }
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -43,7 +51,42 @@ export function GameCanvas() {
     const loop = (now: number) => {
       let dt = Math.min(0.05, (now - last) / 1000);
       last = now;
+      const wasEndScreen = game.state.endScreen;
+      const prevMissions = game.state.missionsCompleted;
       tick(game, dt);
+      const isEndScreen = game.state.endScreen;
+      const nowMissions = game.state.missionsCompleted;
+
+      // Happy time on mission success
+      if (nowMissions > prevMissions && sdk) {
+        sdk.game.happyTime();
+        // Also a good time for a midroll ad if it was a significant mission
+        if (nowMissions % 2 === 0) {
+          sdk.ad.requestAd("midroll", {
+            adStarted: () => { game.state.paused = true; audioEngine.pause(); },
+            adFinished: () => { game.state.paused = false; audioEngine.resume(); },
+            adError: () => { game.state.paused = false; audioEngine.resume(); },
+          });
+        }
+      }
+
+      // Trigger ad break on death/arrest (when endScreen first appears)
+      if (!wasEndScreen && isEndScreen && sdk) {
+        sdk.ad.requestAd("midroll", {
+          adStarted: () => {
+            game.state.paused = true;
+            audioEngine.pause();
+          },
+          adFinished: () => {
+            game.state.paused = false;
+            audioEngine.resume();
+          },
+          adError: () => {
+            game.state.paused = false;
+            audioEngine.resume();
+          },
+        });
+      }
 
       // Clear bg
       ctx.fillStyle = "#1a1a1a";
@@ -161,6 +204,9 @@ export function GameCanvas() {
     audioEngine.start();
     audioEngine.resume();
     setStarted(true);
+    if (sdk) {
+      sdk.game.gameplayStart();
+    }
   };
 
   return (
