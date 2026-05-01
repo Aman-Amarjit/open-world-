@@ -142,24 +142,22 @@ export function renderWorld(rc: RenderContext) {
 
         // ─── ROAD ───────────────────────────────────────────────────────────────
         case "road": {
-          // Dark olive-gray asphalt — the GTA2 reference reads as near-black with
-          // a very slight warm green tint, not the blue-gray we had before.
-          const asphalt = timeFilter(state.timeOfDay, "#30332a");
+          const asphalt = timeFilter(state.timeOfDay, "#2e3128");
           ctx.fillStyle = asphalt;
           ctx.fillRect(px, py, TILE, TILE);
 
-          // Dense micro-grain: tiny alternating dark/light pixels
-          for (let i = 0; i < 24; i++) {
+          // Micro-grain texture
+          for (let i = 0; i < 20; i++) {
             const hh = ((h1 * (i + 7)) ^ h2) >>> 0;
             const sx = px + (hh % TILE);
             const sy = py + ((hh >> 4) % TILE);
-            ctx.fillStyle = i % 2 === 0 ? "#24271f" : "#3e4136";
+            ctx.fillStyle = i % 3 === 0 ? "#22251d" : i % 3 === 1 ? "#3a3e32" : "#26291f";
             ctx.fillRect(sx, sy, 1, 1);
           }
 
-          // Tar seam lines (subtle horizontal or vertical dark bands)
-          if ((h2 % 8) === 0) {
-            ctx.fillStyle = "rgba(0,0,0,0.18)";
+          // Occasional tar seam
+          if ((h2 % 9) === 0) {
+            ctx.fillStyle = "rgba(0,0,0,0.15)";
             if (t.roadDir === "h") {
               ctx.fillRect(px, py + (h1 % (TILE - 4)), TILE, 1);
             } else {
@@ -167,127 +165,124 @@ export function renderWorld(rc: RenderContext) {
             }
           }
 
-          // Oil/rubber stain blobs
-          if ((h3 % 9) === 0) {
-            ctx.fillStyle = "rgba(0,0,0,0.14)";
-            const ox = px + (h1 % (TILE - 6)) + 3;
-            const oy = py + (h2 % (TILE - 6)) + 3;
+          // Oil/rubber stain
+          if ((h3 % 11) === 0) {
+            ctx.fillStyle = "rgba(0,0,0,0.12)";
+            const ox = px + (h1 % (TILE - 8)) + 4;
+            const oy = py + (h2 % (TILE - 8)) + 4;
             ctx.beginPath();
-            ctx.ellipse(ox, oy, 4 + (h3 % 4), 2 + (h3 % 2), (h1 % 6) * 0.5, 0, Math.PI * 2);
+            ctx.ellipse(ox, oy, 3 + (h3 % 3), 1.5 + (h3 % 2), (h1 % 6) * 0.5, 0, Math.PI * 2);
             ctx.fill();
           }
 
           // ── Lane markings ──
-          // GTA2 style: crisp white dashed lines ONLY — no yellow center line.
-          // Lines are quarter-tile inset from edges (so 2 lanes per road tile).
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#e8e8d8");
-          ctx.lineWidth = 1.5;
-          ctx.setLineDash([10, 10]);
+          // Center double-yellow divider (solid) + outer white dashes
+          const lineColor = timeFilter(state.timeOfDay, "#d8d8c8");
+          const centerYellow = timeFilter(state.timeOfDay, "#c8b040");
+
+          ctx.setLineDash([]);
+          ctx.lineWidth = 1;
 
           if (t.roadDir === "h") {
-            // Two dashed lines at 1/4 and 3/4 height
+            // White edge shoulders
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#b0b0a0");
+            ctx.lineWidth = 0.8;
             ctx.beginPath();
-            ctx.moveTo(px, py + TILE * 0.25);
-            ctx.lineTo(px + TILE, py + TILE * 0.25);
+            ctx.moveTo(px, py + 2); ctx.lineTo(px + TILE, py + 2);
+            ctx.moveTo(px, py + TILE - 2); ctx.lineTo(px + TILE, py + TILE - 2);
+            ctx.stroke();
+            // White dashed lane dividers
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([10, 12]);
+            ctx.beginPath();
+            ctx.moveTo(px, py + TILE * 0.25); ctx.lineTo(px + TILE, py + TILE * 0.25);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(px, py + TILE * 0.75);
-            ctx.lineTo(px + TILE, py + TILE * 0.75);
+            ctx.moveTo(px, py + TILE * 0.75); ctx.lineTo(px + TILE, py + TILE * 0.75);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            // Center yellow solid divider
+            ctx.strokeStyle = centerYellow;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px, py + TILE * 0.5 - 1); ctx.lineTo(px + TILE, py + TILE * 0.5 - 1);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px, py + TILE * 0.5 + 1); ctx.lineTo(px + TILE, py + TILE * 0.5 + 1);
             ctx.stroke();
           } else {
+            ctx.strokeStyle = timeFilter(state.timeOfDay, "#b0b0a0");
+            ctx.lineWidth = 0.8;
             ctx.beginPath();
-            ctx.moveTo(px + TILE * 0.25, py);
-            ctx.lineTo(px + TILE * 0.25, py + TILE);
+            ctx.moveTo(px + 2, py); ctx.lineTo(px + 2, py + TILE);
+            ctx.moveTo(px + TILE - 2, py); ctx.lineTo(px + TILE - 2, py + TILE);
+            ctx.stroke();
+            ctx.strokeStyle = lineColor;
+            ctx.lineWidth = 1.2;
+            ctx.setLineDash([10, 12]);
+            ctx.beginPath();
+            ctx.moveTo(px + TILE * 0.25, py); ctx.lineTo(px + TILE * 0.25, py + TILE);
             ctx.stroke();
             ctx.beginPath();
-            ctx.moveTo(px + TILE * 0.75, py);
-            ctx.lineTo(px + TILE * 0.75, py + TILE);
+            ctx.moveTo(px + TILE * 0.75, py); ctx.lineTo(px + TILE * 0.75, py + TILE);
+            ctx.stroke();
+            ctx.setLineDash([]);
+            ctx.strokeStyle = centerYellow;
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(px + TILE * 0.5 - 1, py); ctx.lineTo(px + TILE * 0.5 - 1, py + TILE);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(px + TILE * 0.5 + 1, py); ctx.lineTo(px + TILE * 0.5 + 1, py + TILE);
             ctx.stroke();
           }
           ctx.setLineDash([]);
-
-          // Solid white edge lines (road shoulders)
-          ctx.strokeStyle = timeFilter(state.timeOfDay, "#c8c8b8");
-          ctx.lineWidth = 1;
-          if (t.roadDir === "h") {
-            ctx.beginPath();
-            ctx.moveTo(px, py + 2);
-            ctx.lineTo(px + TILE, py + 2);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(px, py + TILE - 2);
-            ctx.lineTo(px + TILE, py + TILE - 2);
-            ctx.stroke();
-          } else {
-            ctx.beginPath();
-            ctx.moveTo(px + 2, py);
-            ctx.lineTo(px + 2, py + TILE);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.moveTo(px + TILE - 2, py);
-            ctx.lineTo(px + TILE - 2, py + TILE);
-            ctx.stroke();
-          }
           break;
         }
 
         // ─── INTERSECTION ────────────────────────────────────────────────────────
         case "intersection": {
-          // Same dark asphalt base
-          const iAsphalt = timeFilter(state.timeOfDay, "#2c2f26");
+          const iAsphalt = timeFilter(state.timeOfDay, "#2a2d24");
           ctx.fillStyle = iAsphalt;
           ctx.fillRect(px, py, TILE, TILE);
 
           // Grain
-          for (let i = 0; i < 18; i++) {
+          for (let i = 0; i < 16; i++) {
             const hh = ((h1 * (i + 3)) ^ h3) >>> 0;
             const sx = px + (hh % TILE);
             const sy = py + ((hh >> 4) % TILE);
-            ctx.fillStyle = i % 2 === 0 ? "#202318" : "#383c30";
+            ctx.fillStyle = i % 2 === 0 ? "#1e211a" : "#363929";
             ctx.fillRect(sx, sy, 1, 1);
           }
 
-          // White stop-line boxes at each approach edge (GTA2 style: solid white bars)
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#d0d0c0");
-          const barW = 3;
-          // North approach bar
-          ctx.fillRect(px + TILE * 0.1, py, TILE * 0.8, barW);
-          // South approach bar
-          ctx.fillRect(px + TILE * 0.1, py + TILE - barW, TILE * 0.8, barW);
-          // West approach bar
-          ctx.fillRect(px, py + TILE * 0.1, barW, TILE * 0.8);
-          // East approach bar
-          ctx.fillRect(px + TILE - barW, py + TILE * 0.1, barW, TILE * 0.8);
+          // Yellow box junction guide (inner box)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#a89030");
+          ctx.lineWidth = 0.8;
+          ctx.strokeRect(px + 6, py + 6, TILE - 12, TILE - 12);
 
-          // Diagonal corner triangles (faint white — GTA2 characteristic detail)
-          ctx.fillStyle = "rgba(200,200,185,0.12)";
-          const tri = TILE * 0.18;
-          ctx.beginPath();
-          ctx.moveTo(px, py); ctx.lineTo(px + tri, py); ctx.lineTo(px, py + tri);
-          ctx.closePath(); ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(px + TILE, py); ctx.lineTo(px + TILE - tri, py); ctx.lineTo(px + TILE, py + tri);
-          ctx.closePath(); ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(px, py + TILE); ctx.lineTo(px + tri, py + TILE); ctx.lineTo(px, py + TILE - tri);
-          ctx.closePath(); ctx.fill();
-          ctx.beginPath();
-          ctx.moveTo(px + TILE, py + TILE); ctx.lineTo(px + TILE - tri, py + TILE); ctx.lineTo(px + TILE, py + TILE - tri);
-          ctx.closePath(); ctx.fill();
+          // White stop-line bars at each approach — shorter/thinner for less prominence
+          const barColor = timeFilter(state.timeOfDay, "#b8b8a8");
+          ctx.fillStyle = barColor;
+          const barW = 2;
+          const barInset = TILE * 0.15;
+          const barLen = TILE - barInset * 2;
+          ctx.fillRect(px + barInset, py, barLen, barW);              // N
+          ctx.fillRect(px + barInset, py + TILE - barW, barLen, barW); // S
+          ctx.fillRect(px, py + barInset, barW, barLen);              // W
+          ctx.fillRect(px + TILE - barW, py + barInset, barW, barLen); // E
 
-          // Painted arrow — one per intersection tile based on hash (N/S/E/W)
-          const arrowDir = h2 % 4; // 0=N, 1=E, 2=S, 3=W
+          // Painted lane arrow
+          const arrowDir = h2 % 4;
           const cx2 = px + TILE / 2;
           const cy2 = py + TILE / 2;
           ctx.save();
           ctx.translate(cx2, cy2);
           ctx.rotate([Math.PI * 1.5, 0, Math.PI * 0.5, Math.PI][arrowDir]!);
-          ctx.fillStyle = "rgba(200,200,185,0.35)";
-          // Shaft
-          ctx.fillRect(-1.5, -7, 3, 12);
-          // Arrowhead
+          ctx.fillStyle = "rgba(190,190,170,0.28)";
+          ctx.fillRect(-1.5, -6, 3, 10);
           ctx.beginPath();
-          ctx.moveTo(0, -10); ctx.lineTo(-4, -5); ctx.lineTo(4, -5);
+          ctx.moveTo(0, -9); ctx.lineTo(-3.5, -5); ctx.lineTo(3.5, -5);
           ctx.closePath(); ctx.fill();
           ctx.restore();
           break;
@@ -295,24 +290,54 @@ export function renderWorld(rc: RenderContext) {
 
         // ─── CROSSWALK ───────────────────────────────────────────────────────────
         case "crosswalk": {
-          // Match road asphalt base
           const cwBase = timeFilter(state.timeOfDay, "#30332a");
           ctx.fillStyle = cwBase;
           ctx.fillRect(px, py, TILE, TILE);
-
-          // Bright white zebra stripes — alternating 5px bars with 4px gaps
-          ctx.fillStyle = timeFilter(state.timeOfDay, "#e0e0d0");
-          const stripeW = 5;
-          const gap = 4;
-          if (t.roadDir === "v") {
+          // Zebra stripes — stripes run PARALLEL to the road direction
+          // so pedestrians walk perpendicular to traffic between them
+          ctx.fillStyle = timeFilter(state.timeOfDay, "#c8c8b0");
+          const stripeW = 4;
+          const gap = 6;
+          if (t.roadDir === "h") {
+            // Horizontal road → stripes run horizontally (pedestrians cross N/S)
             for (let i = 0; i < 5; i++) {
               ctx.fillRect(px + 4, py + 4 + i * (stripeW + gap), TILE - 8, stripeW);
             }
           } else {
+            // Vertical road → stripes run vertically (pedestrians cross E/W)
             for (let i = 0; i < 5; i++) {
               ctx.fillRect(px + 4 + i * (stripeW + gap), py + 4, stripeW, TILE - 8);
             }
           }
+          break;
+        }
+
+        // ─── PARKING LOT ──────────────────────────────────────────────────────
+        case "parking": {
+          // Dark asphalt with white parking space lines
+          const pkBase = timeFilter(state.timeOfDay, "#2c2f28");
+          ctx.fillStyle = pkBase;
+          ctx.fillRect(px, py, TILE, TILE);
+          // Subtle grain
+          for (let i = 0; i < 12; i++) {
+            const hh = ((h1 * (i + 5)) ^ h2) >>> 0;
+            const sx = px + (hh % TILE);
+            const sy = py + ((hh >> 4) % TILE);
+            ctx.fillStyle = i % 2 === 0 ? "#252822" : "#373b30";
+            ctx.fillRect(sx, sy, 1, 1);
+          }
+          // Parking stall lines (white/cream)
+          ctx.strokeStyle = timeFilter(state.timeOfDay, "#b0b09a");
+          ctx.lineWidth = 1;
+          ctx.beginPath();
+          // Side lines every ~20px
+          for (let i = 0; i <= 3; i++) {
+            const ox = px + i * (TILE / 3);
+            ctx.moveTo(ox, py + 4); ctx.lineTo(ox, py + TILE - 4);
+          }
+          // Horizontal mid cap line
+          ctx.moveTo(px + 2, py + TILE / 2); ctx.lineTo(px + TILE - 2, py + TILE / 2);
+          ctx.stroke();
           break;
         }
 
@@ -737,15 +762,25 @@ function drawBuildingShadow(
   const py = b.y * TILE;
   const w = b.w * TILE;
   const h = b.h * TILE;
-  const len = b.height * 0.4 * (state.timeOfDay === "night" ? 0.3 : 1);
-  ctx.fillStyle = `rgba(0,0,0,${state.timeOfDay === "night" ? 0.25 : 0.45})`;
+  // Shadow is cast in the OPPOSITE direction of the roof extrusion (SE direction)
+  const wallLen = b.height * 0.26;
+  const sx = wallLen * 0.48;  // shadow goes right (east)
+  const sy = wallLen * 0.82;  // shadow goes down (south)
+  const alpha = state.timeOfDay === "night" ? 0.22 : state.timeOfDay === "dusk" ? 0.35 : 0.42;
+  ctx.fillStyle = `rgba(0,0,0,${alpha})`;
   ctx.beginPath();
-  ctx.moveTo(px, py);
-  ctx.lineTo(px + w, py);
-  ctx.lineTo(px + w + len, py + len);
-  ctx.lineTo(px + w + len, py + h + len);
-  ctx.lineTo(px + len, py + h + len);
-  ctx.lineTo(px, py + h);
+  ctx.moveTo(px, py + h);
+  ctx.lineTo(px + w, py + h);
+  ctx.lineTo(px + w + sx, py + h + sy);
+  ctx.lineTo(px + sx, py + h + sy);
+  ctx.closePath();
+  ctx.fill();
+  // Right side shadow sliver
+  ctx.beginPath();
+  ctx.moveTo(px + w, py);
+  ctx.lineTo(px + w + sx, py + sy);
+  ctx.lineTo(px + w + sx, py + h + sy);
+  ctx.lineTo(px + w, py + h);
   ctx.closePath();
   ctx.fill();
 }
@@ -760,136 +795,197 @@ function drawBuilding(
   const w = b.w * TILE;
   const h = b.h * TILE;
 
-  // DYNAMIC 3D PERSPECTIVE: Extrude relative to screen center
-  const cam = state.camera;
-  const dx = (px + w / 2 - cam.x);
-  const dy = (py + h / 2 - cam.y);
-  const extFactor = 0.00018 * b.height;
-  const extX = dx * extFactor;
-  const extY = dy * extFactor;
+  // FIXED NW LIGHTING: roof always extruded upper-left so walls are consistent
+  // regardless of camera position. extX<0 → right (east) wall visible.
+  // extY<0 → bottom (south) wall visible. This is the GTA1 top-down convention.
+  const wallLen = b.height * 0.26;
+  const extX = -wallLen * 0.48;
+  const extY = -wallLen * 0.82;
 
   const wallColor = timeFilter(state.timeOfDay, b.color);
   const roofColor = timeFilter(state.timeOfDay, b.roofColor);
-  const dark = shadeHex(wallColor, -45);
-  const vDark = shadeHex(wallColor, -65);
+  const dark = shadeHex(wallColor, -42);
+  const vDark = shadeHex(wallColor, -62);
   const isNight = state.timeOfDay === "night";
 
-  // Roof corners
   const rx = px + extX;
   const ry = py + extY;
   const rw = w;
   const rh = h;
 
-  // 1. DRAW SIDE WALLS
-  const drawWall = (x1: number, y1: number, x2: number, y2: number, nx1: number, ny1: number, nx2: number, ny2: number, color: string, isVertical: boolean) => {
+  // Draw a filled wall quad between two edge segments
+  const drawWall = (
+    x1: number, y1: number, x2: number, y2: number,
+    nx1: number, ny1: number, nx2: number, ny2: number,
+    color: string,
+  ) => {
     ctx.fillStyle = color;
     ctx.beginPath();
-    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.lineTo(nx2, ny2); ctx.lineTo(nx1, ny1);
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.lineTo(nx2, ny2); ctx.lineTo(nx1, ny1);
     ctx.closePath();
     ctx.fill();
-
-    // Architectural details (Columns and Floor Slabs)
-    const wallW = Math.abs(nx1 - x1);
-    const wallH = Math.abs(ny1 - y1);
-
+    // Edge line for crispness
     ctx.strokeStyle = vDark;
-    ctx.lineWidth = 0.6;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    ctx.moveTo(x1, y1); ctx.lineTo(x2, y2);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(nx1, ny1); ctx.lineTo(nx2, ny2);
+    ctx.stroke();
+  };
 
-    if (isVertical) {
-      // Vertical wall (Left or Right)
-      // Floor slabs
-      const floors = Math.max(1, Math.floor(h / 16));
-      for (let i = 1; i < floors; i++) {
-        const fy1 = y1 + i * (h / floors);
-        const fny1 = ny1 + i * (h / floors);
+  // 1. SIDE WALLS (always same sides due to fixed lighting)
+  // Right wall (east face — darker, facing away from NW sun)
+  const eastColor = shadeHex(dark, -8);
+  drawWall(px + w, py, px + w, py + h, rx + rw, ry + rh, rx + rw, ry, eastColor);
+
+  // Floor lines on east wall
+  {
+    const wallH = Math.abs(ry - py);
+    if (wallH > 6) {
+      const floors = Math.max(1, Math.min(8, Math.floor(b.height / 18)));
+      ctx.strokeStyle = shadeHex(eastColor, -20);
+      ctx.lineWidth = 0.4;
+      for (let i = 1; i <= floors; i++) {
+        const t = i / (floors + 1);
         ctx.beginPath();
-        ctx.moveTo(x1, fy1); ctx.lineTo(nx1, fny1);
+        ctx.moveTo(px + w, py + h * t);
+        ctx.lineTo(rx + rw, ry + rh * t);
         ctx.stroke();
       }
-      // Pillars
-      const pillars = Math.max(2, Math.floor(h / 12));
-      for (let i = 0; i <= pillars; i++) {
-        const p1 = y1 + i * (h / pillars);
-        const pn1 = ny1 + i * (h / pillars);
-        // Draw window inset
-        if (i < pillars) {
-          ctx.fillStyle = isNight && (b.id + i) % 5 === 0 ? "#ffd040" : "rgba(0,0,0,0.3)";
-          const wx = x1 + (nx1 - x1) * 0.5 - 2;
-          const wy = p1 + (h / pillars) * 0.2;
-          const wny = pn1 + (h / pillars) * 0.2;
+      // Windows on east wall
+      const winRows = Math.max(1, Math.floor(b.height / 20));
+      const winCols = Math.max(1, Math.floor(h / 18));
+      for (let r = 0; r < winRows; r++) {
+        for (let c = 0; c < winCols; c++) {
+          const t = (c + 0.5) / winCols;
+          const s = (r + 0.3) / winRows;
+          const wy1 = py + h * t;
+          const wx1 = px + w + (rx + rw - px - w) * s;
+          const wy2 = ry + rh * t;
+          const wx2 = rx + rw + (rx + rw - px - w) * s;
+          const lit = isNight && ((b.id * 7 + r * 3 + c) % 5) === 0;
+          ctx.fillStyle = lit ? "rgba(255,210,120,0.85)" : "rgba(0,0,0,0.35)";
           ctx.beginPath();
-          ctx.moveTo(wx, wy); ctx.lineTo(wx + 4, wy); ctx.lineTo(wx + 4, wny + (h / pillars) * 0.6); ctx.lineTo(wx, wny + (h / pillars) * 0.6);
+          ctx.moveTo(wx1, wy1 - 2); ctx.lineTo(wx1 + 3, wy1 - 2);
+          ctx.lineTo(wx2 + 3, wy2 - 2); ctx.lineTo(wx2, wy2 - 2);
+          ctx.closePath();
           ctx.fill();
         }
       }
-    } else {
-      // Horizontal wall (Top or Bottom)
-      const segments = Math.max(2, Math.floor(w / 16));
-      for (let i = 1; i < segments; i++) {
-        const fx1 = x1 + i * (w / segments);
-        const fnx1 = nx1 + i * (w / segments);
+    }
+  }
+
+  // Bottom wall (south face — slightly lighter, partially facing NW sun)
+  const southColor = shadeHex(dark, 6);
+  drawWall(px, py + h, px + w, py + h, rx + rw, ry + rh, rx, ry + rh, southColor);
+
+  // Floor lines + windows on south wall
+  {
+    const wallH = Math.abs(ry + rh - py - h);
+    if (wallH > 4) {
+      const floors = Math.max(1, Math.min(8, Math.floor(b.height / 18)));
+      ctx.strokeStyle = shadeHex(southColor, -20);
+      ctx.lineWidth = 0.4;
+      for (let i = 1; i <= floors; i++) {
+        const t = i / (floors + 1);
         ctx.beginPath();
-        ctx.moveTo(fx1, y1); ctx.lineTo(fnx1, ny1);
+        ctx.moveTo(px + w * t, py + h);
+        ctx.lineTo(rx + rw * t, ry + rh);
         ctx.stroke();
       }
-      // Windows
-      const winCols = Math.max(1, Math.floor(w / 12));
-      for (let i = 0; i < winCols; i++) {
-        const wx = x1 + (i + 0.2) * (w / winCols);
-        const wnx = nx1 + (i + 0.2) * (w / winCols);
-        const ww = (w / winCols) * 0.6;
-        ctx.fillStyle = isNight && (b.id + i) % 7 === 0 ? "#ffd040" : "rgba(0,0,0,0.3)";
-        ctx.beginPath();
-        ctx.moveTo(wx, y1 + (ny1 - y1) * 0.3); ctx.lineTo(wx + ww, y1 + (ny1 - y1) * 0.3);
-        ctx.lineTo(wnx + ww, ny1 + (ny1 - y1) * 0.3); ctx.lineTo(wnx, ny1 + (ny1 - y1) * 0.3);
-        ctx.fill();
+      // Windows on south wall
+      const winCols = Math.max(1, Math.floor(w / 18));
+      const winRows = Math.max(1, Math.floor(b.height / 20));
+      for (let c = 0; c < winCols; c++) {
+        for (let r = 0; r < winRows; r++) {
+          const tC = (c + 0.5) / winCols;
+          const tR = (r + 0.3) / winRows;
+          const wx = px + w * tC;
+          const wy = py + h;
+          const wnx = rx + rw * tC;
+          const wny = ry + rh;
+          const wallOffY = (ry + rh - py - h) * tR;
+          const lit = isNight && ((b.id * 13 + c * 5 + r) % 6) === 0;
+          ctx.fillStyle = lit ? "rgba(255,215,110,0.8)" : "rgba(0,0,0,0.32)";
+          ctx.beginPath();
+          ctx.moveTo(wx - 2, wy + wallOffY);
+          ctx.lineTo(wx + 2, wy + wallOffY);
+          ctx.lineTo(wnx + 2, wny + wallOffY * 0);
+          ctx.lineTo(wnx - 2, wny + wallOffY * 0);
+          ctx.closePath();
+          ctx.fill();
+        }
       }
     }
-  };
-
-  // Right
-  if (extX < 0) drawWall(px + w, py, px + w, py + h, rx + rw, ry + rh, rx + rw, ry, shadeHex(dark, -5), true);
-  // Left
-  if (extX > 0) drawWall(px, py, px, py + h, rx, ry + rh, rx, ry, dark, true);
-  // Top
-  if (extY > 0) drawWall(px, py, px + w, py, rx + rw, ry, rx, ry, shadeHex(dark, -10), false);
-  // Bottom
-  if (extY < 0) drawWall(px, py + h, px + w, py + h, rx + rw, ry + rh, rx, ry + rh, shadeHex(dark, 5), false);
+  }
 
   // 2. ROOF
   const roofGrad = ctx.createLinearGradient(rx, ry, rx + rw, ry + rh);
-  roofGrad.addColorStop(0, shadeHex(roofColor, 10));
-  roofGrad.addColorStop(1, shadeHex(roofColor, -15));
+  roofGrad.addColorStop(0, shadeHex(roofColor, 12));
+  roofGrad.addColorStop(0.5, roofColor);
+  roofGrad.addColorStop(1, shadeHex(roofColor, -18));
   ctx.fillStyle = roofGrad;
   ctx.fillRect(rx, ry, rw, rh);
 
-  // Roof borders
+  // Parapet ledge
   ctx.strokeStyle = vDark;
   ctx.lineWidth = 1;
   ctx.strokeRect(rx, ry, rw, rh);
-
-  // Interior roof ledge (parapet)
-  ctx.fillStyle = "rgba(0,0,0,0.15)";
+  ctx.fillStyle = "rgba(0,0,0,0.14)";
   ctx.fillRect(rx, ry, rw, 2);
   ctx.fillRect(rx, ry, 2, rh);
-  ctx.fillStyle = "rgba(255,255,255,0.05)";
+  ctx.fillStyle = "rgba(255,255,255,0.06)";
   ctx.fillRect(rx, ry + rh - 2, rw, 2);
   ctx.fillRect(rx + rw - 2, ry, 2, rh);
 
-  // Roof details
-  ctx.fillStyle = shadeHex(roofColor, -25);
-  if (rw > 40 && rh > 40) {
-    // Large AC unit
-    ctx.fillRect(rx + rw * 0.6, ry + rh * 0.3, 12, 10);
-    ctx.fillStyle = "rgba(0,0,0,0.3)";
-    ctx.fillRect(rx + rw * 0.6 + 2, ry + rh * 0.3 + 2, 8, 6);
+  // Roof details for larger buildings
+  if (rw > 48 && rh > 48) {
+    // HVAC unit
+    ctx.fillStyle = shadeHex(roofColor, -28);
+    ctx.fillRect(rx + rw * 0.58, ry + rh * 0.28, 14, 10);
+    ctx.fillStyle = "rgba(0,0,0,0.28)";
+    ctx.fillRect(rx + rw * 0.58 + 2, ry + rh * 0.28 + 2, 10, 6);
+    // Antenna / vent stack
+    if ((b.id % 3) === 0) {
+      ctx.fillStyle = shadeHex(roofColor, -40);
+      ctx.fillRect(rx + rw * 0.2 - 1, ry + rh * 0.2 - 1, 3, 3);
+      ctx.fillStyle = "rgba(255,60,60,0.7)";
+      ctx.fillRect(rx + rw * 0.2, ry + rh * 0.2 - 6, 1, 6);
+    }
+    // Water tower
+    if ((b.id % 5) === 1 && rw > 80) {
+      const tx = rx + rw * 0.75;
+      const ty = ry + rh * 0.6;
+      ctx.fillStyle = "#4a3820";
+      ctx.fillRect(tx - 4, ty - 2, 8, 8);
+      ctx.fillStyle = "#6a5230";
+      ctx.beginPath();
+      ctx.arc(tx, ty - 2, 5, 0, Math.PI * 2);
+      ctx.fill();
+    }
   }
 
-  // Gravel noise
-  ctx.fillStyle = "rgba(0,0,0,0.08)";
-  for (let i = 0; i < (rw * rh) / 80; i++) {
-    const gx = rx + ((b.id * 17 + i * 23) % rw);
-    const gy = ry + ((b.id * 11 + i * 19) % rh);
+  // Neon sign on roof edge (for buildings with hasNeon)
+  if (b.hasNeon && isNight) {
+    const t = performance.now() / 400;
+    const pulse = 0.5 + 0.5 * Math.sin(t + b.id);
+    ctx.save();
+    ctx.globalCompositeOperation = "lighter";
+    ctx.strokeStyle = b.neonColor;
+    ctx.lineWidth = 2;
+    ctx.globalAlpha = 0.4 + pulse * 0.35;
+    ctx.strokeRect(rx + 3, ry + 3, rw - 6, rh - 6);
+    ctx.restore();
+  }
+
+  // Gravel noise on roof
+  ctx.fillStyle = "rgba(0,0,0,0.07)";
+  for (let i = 0; i < (rw * rh) / 90; i++) {
+    const gx = rx + ((b.id * 17 + i * 23) % Math.max(1, rw));
+    const gy = ry + ((b.id * 11 + i * 19) % Math.max(1, rh));
     ctx.fillRect(gx, gy, 1, 1);
   }
 }

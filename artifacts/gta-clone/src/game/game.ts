@@ -260,15 +260,6 @@ export function tick(game: Game, dt: number) {
             ? 0.7
             : 0.3;
 
-  // Shop interaction first — so the E press is consumed by the shop before
-  // the vehicle enter/exit logic sees it. Without this order, pressing E on
-  // foot near a shop is swallowed by the "enter vehicle" branch and pressing
-  // E in a car next to Pay 'n' Spray exits the car instead of triggering the
-  // service.
-  if (!state.endScreen) {
-    updateShops(state, world, dt);
-  }
-
   // Player input -> movement (skip while end-screen overlay is up)
   if (!state.endScreen) {
     applyPlayerInput(state, dt);

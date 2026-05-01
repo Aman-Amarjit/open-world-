@@ -135,8 +135,9 @@ export function updateVehicle(
     if (blockedX && blockedY) break;
   }
 
-  // Skid marks - if drifting hard
-  if (Math.abs(newSide) > 60 && cur > 100) {
+  // Skid marks — proportional to speed: need significant lateral slip fraction
+  const slipRatio = cur > 40 ? Math.abs(newSide) / cur : 0;
+  if (slipRatio > 0.38 && cur > 90) {
     addSkidMark(state, v);
   }
 
