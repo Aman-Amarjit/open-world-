@@ -227,6 +227,49 @@ export function createGame(seed = 42): Game {
       bob: rand(0, Math.PI * 2),
     });
   }
+
+  // ---- PARKED CARS in parking lots ----
+  // Civilian-only kinds (no cop cars in lots)
+  const civilianKinds: VehicleKind[] = ["sedan", "sedan", "muscle", "truck", "sports"];
+  for (let ty = 1; ty < world.tiles.length - 1; ty++) {
+    for (let tx = 1; tx < world.tiles[ty]!.length - 1; tx++) {
+      const t = world.tiles[ty]![tx]!;
+      if (t.type !== "parking") continue;
+
+      // Place a car on every other tile in a grid pattern
+      // Use tx/ty parity to create parking-row structure
+      if ((tx % 2 !== 0) || (ty % 2 !== 0)) continue;
+
+      // ~55% fill probability — lots aren't always full
+      if (Math.random() > 0.55) continue;
+
+      // Detect lot orientation: count adjacent parking tiles in X vs Y
+      let horiz = 0, vert = 0;
+      for (let d = -3; d <= 3; d++) {
+        if (world.tiles[ty]?.[tx + d]?.type === "parking") horiz++;
+        if (world.tiles[ty + d]?.[tx]?.type === "parking") vert++;
+      }
+      // Cars face perpendicular to the lot's long axis
+      // Horizontal lot → cars angle 0 (face N/S); vertical lot → cars angle π/2 (face E/W)
+      const angle = horiz >= vert ? 0 : Math.PI / 2;
+
+      // Center car in tile, slight random jitter for realism
+      const cx = tx * TILE + TILE / 2 + rand(-4, 4);
+      const cy = ty * TILE + TILE / 2 + rand(-4, 4);
+
+      const kind = civilianKinds[Math.floor(Math.random() * civilianKinds.length)]!;
+      const v = createVehicle(kind, cx, cy, angle);
+      // Keep permanently parked: no velocity, brake on, huge aiTimer so AI skips them
+      v.vx = 0;
+      v.vy = 0;
+      v.throttle = 0;
+      v.brake = 1;
+      v.aiTimer = 999999;
+      v.aiThrottle = 0;
+      state.vehicles.push(v);
+    }
+  }
+
   return { world, state };
 }
 
