@@ -47,7 +47,15 @@ export type InteriorPropKind =
   | "coffeeTable"
   | "kitchenette"
   | "clock"
-  | "rugRound";
+  | "rugRound"
+  // Gym-specific props
+  | "treadmill"
+  | "barbell"
+  | "punchingBag"
+  | "gymMirror"
+  | "benchPress"
+  | "weightRack"
+  | "gymLocker";
 
 export interface InteriorProp {
   kind: InteriorPropKind;
@@ -139,6 +147,7 @@ export const INTERIOR_SHOP_INFO: Record<
   food:        { label: "Order food (free) +25 HP", cost: 0,   cooldown: 1.5 },
   safehouse:   { label: "Save spawn (free) — full heal", cost: 0,   cooldown: 1.5 },
   pay_n_spray: { label: "Respray car — $100", cost: 100, cooldown: 1.5 },
+  gym:         { label: "Train hard — $150 (+20 Max HP)", cost: 150, cooldown: 2.0 },
 };
 
 // ---- GENERATION ----
@@ -224,6 +233,7 @@ export function buildInterior(shop: Shop): Interior {
     case "food":          decorFood(ir);      break;
     case "safehouse":     decorSafehouse(ir); break;
     case "pay_n_spray":   decorGarage(ir);    break;
+    case "gym":           decorGym(ir);       break;
   }
   return ir;
 }
@@ -447,6 +457,59 @@ function decorGarage(ir: Interior) {
   ir.props.push({ kind: "pillar", x: ROOM_W - 64, y: 130, w: 14, h: 14, solid: true });
   // Mechanic
   ir.npcs.push(makeNPC("clerk", ROOM_W / 2, 100, "#3affc8", "#1f1f1f"));
+}
+
+function decorGym(ir: Interior) {
+  ir.floorColor = "#2a2a2a";
+  ir.floorAccent = "#1a1a1a";
+  ir.wallColor = "#282018";
+  ir.wallTrim = "#0a0808";
+  ir.floorStyle = "wood";
+  ir.interact.label = "TRAIN — $150 (+20 Max HP)";
+  ir.interact.x = ROOM_W / 2 - 50;
+  ir.interact.y = WALL_THICK + 20;
+  ir.interact.w = 100;
+  ir.interact.h = 30;
+
+  // Full-wall mirror along north side
+  ir.props.push({ kind: "gymMirror", x: WALL_THICK + 4, y: WALL_THICK + 4, w: ROOM_W - WALL_THICK * 2 - 8, h: 16, color: "#aad4e8" });
+
+  // Treadmills along left wall
+  for (let i = 0; i < 2; i++) {
+    ir.props.push({ kind: "treadmill", x: WALL_THICK + 10, y: 70 + i * 70, w: 44, h: 26, solid: true, color: "#1a1a1a" });
+  }
+
+  // Bench press stations in center
+  ir.props.push({ kind: "benchPress", x: ROOM_W / 2 - 60, y: 80, w: 50, h: 28, solid: true, color: "#303030" });
+  ir.props.push({ kind: "benchPress", x: ROOM_W / 2 + 10, y: 80, w: 50, h: 28, solid: true, color: "#303030" });
+
+  // Barbell rack at top-right
+  ir.props.push({ kind: "weightRack", x: ROOM_W - WALL_THICK - 80, y: WALL_THICK + 26, w: 64, h: 20, solid: true, color: "#3a3a3a" });
+  ir.props.push({ kind: "barbell", x: ROOM_W - WALL_THICK - 70, y: WALL_THICK + 50, w: 52, h: 8, solid: false, color: "#606060" });
+  ir.props.push({ kind: "barbell", x: ROOM_W - WALL_THICK - 70, y: WALL_THICK + 62, w: 52, h: 8, solid: false, color: "#606060" });
+
+  // Punching bag in right corner
+  ir.props.push({ kind: "punchingBag", x: ROOM_W - WALL_THICK - 42, y: 130, w: 20, h: 34, solid: true, color: "#8a2020" });
+
+  // Lockers along right wall
+  for (let i = 0; i < 3; i++) {
+    ir.props.push({ kind: "gymLocker", x: ROOM_W - WALL_THICK - 20, y: 70 + i * 50, w: 16, h: 40, solid: true, color: "#4a4040" });
+  }
+
+  // Water cooler
+  ir.props.push({ kind: "vendingMachine", x: WALL_THICK + 10, y: ROOM_H - 100, w: 16, h: 24, solid: true, color: "#1a3a5a" });
+
+  // Fluorescent overhead lights
+  ir.props.push({ kind: "fluorescentLight", x: ROOM_W / 2 - 60, y: 28, w: 120, h: 6 });
+  ir.props.push({ kind: "fluorescentLight", x: ROOM_W / 2 - 60, y: 140, w: 120, h: 6 });
+
+  // Doormat
+  ir.props.push({ kind: "doormat", x: ROOM_W / 2 - 28, y: ROOM_H - WALL_THICK - 16, w: 56, h: 14 });
+
+  // NPCs: trainer at counter zone, two patrons working out
+  ir.npcs.push(makeNPC("clerk", ROOM_W / 2, WALL_THICK + 10, "#ff6030", "#1a1a1a"));
+  ir.npcs.push(makeNPC("civilian", ROOM_W / 2 - 40, 100, "#cc3020", "#1a1a1a"));
+  ir.npcs.push(makeNPC("civilian", ROOM_W / 2 + 60, 120, "#3a60a8", "#1a1a1a"));
 }
 
 // ---- ENTER / EXIT ----
@@ -715,6 +778,20 @@ function triggerInteriorAction(state: GameState) {
     case "pay_n_spray":
       // shouldn't usually be reached on foot
       msg = "GET IN A CAR";
+      break;
+    case "gym":
+      if (p.maxHp >= 200) {
+        ir.bannerMsg = "MAX POWER ACHIEVED!";
+        ir.bannerTimer = 1.6;
+        ir.flashColor = "#ff6030";
+        ir.flashTimer = 0.4;
+        return;
+      }
+      p.maxHp = Math.min(200, p.maxHp + 20);
+      p.hp = Math.min(p.maxHp, p.hp + 20);
+      state.money -= info.cost;
+      msg = `PUMPED UP! MAX HP +20 (now ${p.maxHp})`;
+      ir.flashColor = "#ff6030";
       break;
   }
   ir.bannerMsg = msg;
@@ -1852,6 +1929,175 @@ function drawProp(ctx: CanvasRenderingContext2D, ir: Interior, p: InteriorProp) 
       ctx.beginPath();
       ctx.arc(cx, cy, 2, 0, Math.PI * 2);
       ctx.fill();
+      break;
+    }
+
+    // ---- GYM PROPS ----
+    case "treadmill": {
+      const tc = p.color || "#1a1a1a";
+      ctx.fillStyle = tc;
+      ctx.fillRect(p.x, p.y + 6, p.w, p.h - 6);
+      // Belt surface (running deck)
+      ctx.fillStyle = "#3a3a3a";
+      ctx.fillRect(p.x + 4, p.y + 10, p.w - 8, p.h - 16);
+      // Belt stripes
+      ctx.strokeStyle = "#505050";
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 4; i++) {
+        const bx = p.x + 4 + i * ((p.w - 8) / 4);
+        ctx.beginPath(); ctx.moveTo(bx, p.y + 10); ctx.lineTo(bx, p.y + p.h - 6); ctx.stroke();
+      }
+      // Console (front)
+      ctx.fillStyle = "#202a40";
+      ctx.fillRect(p.x + 8, p.y, p.w - 16, 8);
+      // Screen
+      ctx.fillStyle = "#20e040";
+      ctx.fillRect(p.x + 12, p.y + 1, p.w - 24, 5);
+      // Handles
+      ctx.strokeStyle = "#606060";
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(p.x + 2, p.y + 2); ctx.lineTo(p.x + 2, p.y + p.h - 8);
+      ctx.moveTo(p.x + p.w - 2, p.y + 2); ctx.lineTo(p.x + p.w - 2, p.y + p.h - 8);
+      ctx.stroke();
+      break;
+    }
+
+    case "barbell": {
+      const bc = p.color || "#606060";
+      // Bar shaft
+      ctx.fillStyle = bc;
+      ctx.fillRect(p.x, p.y + p.h / 2 - 2, p.w, 4);
+      // Weight plates on each end
+      const plateW = 6, plateH = p.h;
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(p.x, p.y, plateW, plateH);
+      ctx.fillRect(p.x + p.w - plateW, p.y, plateW, plateH);
+      ctx.fillStyle = "#404040";
+      ctx.fillRect(p.x + plateW, p.y + 1, plateW - 1, plateH - 2);
+      ctx.fillRect(p.x + p.w - plateW * 2, p.y + 1, plateW - 1, plateH - 2);
+      // Collar rings
+      ctx.fillStyle = "#888888";
+      ctx.fillRect(p.x + plateW * 2, p.y + p.h / 2 - 2.5, 3, 5);
+      ctx.fillRect(p.x + p.w - plateW * 2 - 3, p.y + p.h / 2 - 2.5, 3, 5);
+      break;
+    }
+
+    case "punchingBag": {
+      const bagColor = p.color || "#8a2020";
+      const bagCx = p.x + p.w / 2;
+      // Chain
+      ctx.strokeStyle = "#606060";
+      ctx.lineWidth = 1.5;
+      ctx.beginPath();
+      ctx.moveTo(bagCx, p.y); ctx.lineTo(bagCx, p.y - 6);
+      ctx.stroke();
+      // Bag body
+      ctx.fillStyle = bagColor;
+      ctx.beginPath();
+      ctx.roundRect(p.x, p.y, p.w, p.h, [4, 4, 8, 8]);
+      ctx.fill();
+      // Wrap lines (tape)
+      ctx.strokeStyle = shadeHex(bagColor, -28);
+      ctx.lineWidth = 1;
+      for (let i = 1; i < 4; i++) {
+        const ly = p.y + i * (p.h / 4);
+        ctx.beginPath(); ctx.moveTo(p.x + 1, ly); ctx.lineTo(p.x + p.w - 1, ly); ctx.stroke();
+      }
+      // Highlight
+      ctx.fillStyle = "rgba(255,255,255,0.1)";
+      ctx.fillRect(p.x + 3, p.y + 4, 4, p.h - 12);
+      break;
+    }
+
+    case "gymMirror": {
+      // Wall mirror — full width reflective surface
+      ctx.fillStyle = "#aac8e0";
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Frame
+      ctx.strokeStyle = "#888888";
+      ctx.lineWidth = 1.5;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      // Reflection glint
+      ctx.fillStyle = "rgba(255,255,255,0.5)";
+      ctx.fillRect(p.x + 4, p.y + 2, p.w / 3, 2);
+      ctx.fillStyle = "rgba(255,255,255,0.2)";
+      ctx.fillRect(p.x + 8, p.y + 5, p.w / 5, 1);
+      break;
+    }
+
+    case "benchPress": {
+      const bpc = p.color || "#303030";
+      // Main bench bed
+      ctx.fillStyle = "#5a3a2a";
+      ctx.fillRect(p.x + 4, p.y + p.h / 2 - 4, p.w - 8, 10);
+      // Uprights
+      ctx.fillStyle = bpc;
+      ctx.fillRect(p.x + 2, p.y, 6, p.h);
+      ctx.fillRect(p.x + p.w - 8, p.y, 6, p.h);
+      // Barbell on rack
+      ctx.fillStyle = "#888888";
+      ctx.fillRect(p.x, p.y + 4, p.w, 3);
+      // Weight plates
+      ctx.fillStyle = "#1a1a1a";
+      ctx.fillRect(p.x, p.y + 2, 4, 7);
+      ctx.fillRect(p.x + p.w - 4, p.y + 2, 4, 7);
+      // Bench legs
+      ctx.fillStyle = shadeHex(bpc, -15);
+      ctx.fillRect(p.x + 4, p.y + p.h - 6, 6, 6);
+      ctx.fillRect(p.x + p.w - 10, p.y + p.h - 6, 6, 6);
+      break;
+    }
+
+    case "weightRack": {
+      const wrc = p.color || "#3a3a3a";
+      ctx.fillStyle = wrc;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Horizontal shelves
+      ctx.fillStyle = shadeHex(wrc, 15);
+      ctx.fillRect(p.x + 2, p.y + 2, p.w - 4, 3);
+      ctx.fillRect(p.x + 2, p.y + p.h / 2 - 1, p.w - 4, 3);
+      ctx.fillRect(p.x + 2, p.y + p.h - 5, p.w - 4, 3);
+      // Round weight plates on top shelf
+      const plateColors = ["#cc2020", "#2020cc", "#20a020", "#cccc20", "#1a1a1a"];
+      for (let i = 0; i < 6; i++) {
+        const px2 = p.x + 4 + i * (p.w - 8) / 5;
+        ctx.fillStyle = plateColors[i % plateColors.length]!;
+        ctx.beginPath();
+        ctx.arc(px2, p.y + 5, 3.5, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.strokeStyle = "#0a0a0a";
+        ctx.lineWidth = 0.5;
+        ctx.stroke();
+      }
+      // Border
+      ctx.strokeStyle = shadeHex(wrc, -25);
+      ctx.lineWidth = 0.8;
+      ctx.strokeRect(p.x + 0.5, p.y + 0.5, p.w - 1, p.h - 1);
+      break;
+    }
+
+    case "gymLocker": {
+      const lc = p.color || "#4a4040";
+      ctx.fillStyle = lc;
+      ctx.fillRect(p.x, p.y, p.w, p.h);
+      // Door gap line
+      ctx.strokeStyle = shadeHex(lc, -30);
+      ctx.lineWidth = 0.8;
+      ctx.beginPath();
+      ctx.moveTo(p.x + p.w / 2, p.y + 2); ctx.lineTo(p.x + p.w / 2, p.y + p.h - 2);
+      ctx.moveTo(p.x + 2, p.y + p.h * 0.35); ctx.lineTo(p.x + p.w - 2, p.y + p.h * 0.35);
+      ctx.stroke();
+      // Ventilation slits
+      ctx.strokeStyle = shadeHex(lc, -45);
+      ctx.lineWidth = 0.5;
+      for (let i = 0; i < 3; i++) {
+        const ly = p.y + 6 + i * 5;
+        ctx.beginPath(); ctx.moveTo(p.x + 2, ly); ctx.lineTo(p.x + p.w - 2, ly); ctx.stroke();
+      }
+      // Handle
+      ctx.fillStyle = "#a0a0a0";
+      ctx.fillRect(p.x + p.w / 2 - 1, p.y + p.h * 0.15, 2, 6);
       break;
     }
   }

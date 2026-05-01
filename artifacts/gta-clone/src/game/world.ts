@@ -62,7 +62,8 @@ export type ShopKind =
   | "pay_n_spray"
   | "food"
   | "safehouse"
-  | "ammu";
+  | "ammu"
+  | "gym";
 
 export interface Shop {
   id: number;
@@ -536,6 +537,7 @@ export function generateWorld(seed: number): WorldData {
     food:      { name: "BURGER SHOT",  color: "#ffd048" },
     safehouse: { name: "SAFEHOUSE",    color: "#80ff80" },
     ammu:      { name: "GUN STORE",    color: "#ff7a30" },
+    gym:       { name: "IRON WILL GYM",color: "#ff6030" },
   };
   const shopRoster: { kind: ShopKind; preferred: District[] }[] = [
     { kind: "hospital",   preferred: ["downtown", "commercial"] },
@@ -551,6 +553,8 @@ export function generateWorld(seed: number): WorldData {
     { kind: "safehouse",  preferred: ["residential"] },
     { kind: "safehouse",  preferred: ["waterfront"] },
     { kind: "safehouse",  preferred: ["residential"] },
+    { kind: "gym",        preferred: ["commercial", "residential"] },
+    { kind: "gym",        preferred: ["downtown", "industrial"] },
   ];
   const usedBuildings = new Set<number>();
   const shopTiles = new Map<string, number>();

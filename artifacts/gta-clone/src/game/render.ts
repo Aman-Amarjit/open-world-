@@ -59,15 +59,19 @@ export function renderWorld(rc: RenderContext) {
       switch (t.type) {
         // ─── GRASS ──────────────────────────────────────────────────────────────
         case "grass": {
-          const base = timeFilter(state.timeOfDay, "#4a6e2a");
+          const isForest = t.district === "forest";
+          const isPark   = t.district === "park";
+          // Forest gets a deeper, richer green base; park gets a brighter turf
+          const baseHex = isForest ? "#3a5a1e" : isPark ? "#4a7028" : "#4a6e2a";
+          const base = timeFilter(state.timeOfDay, baseHex);
           ctx.fillStyle = base;
           ctx.fillRect(px, py, TILE, TILE);
 
-          // Two-tone speckle: slightly darker and slightly lighter green dots
-          // Use per-tile hash for stable, flicker-free noise
-          const dark = shadeHex(base, -18);
-          const lite = shadeHex(base, 14);
-          for (let i = 0; i < 22; i++) {
+          // Two-tone ground speckle (stable per-tile hash)
+          const dark = shadeHex(base, -16);
+          const lite = shadeHex(base, 12);
+          const speckleCount = isForest ? 18 : 22;
+          for (let i = 0; i < speckleCount; i++) {
             const hh = ((h1 >> (i % 7)) ^ (h2 * (i + 1))) >>> 0;
             const sx = px + (hh % TILE);
             const sy = py + ((hh >> 5) % TILE);
@@ -75,15 +79,80 @@ export function renderWorld(rc: RenderContext) {
             ctx.fillRect(sx, sy, 1, 1);
           }
 
-          // Lush variant gets a few extra dark patches
+          // Lush variant gets richer undergrowth patches
           if (t.variant! >= 4) {
             for (let i = 0; i < 6; i++) {
               const hh = ((h3 * (i + 3)) ^ h1) >>> 0;
               const sx = px + (hh % (TILE - 3));
               const sy = py + ((hh >> 4) % (TILE - 3));
-              ctx.fillStyle = shadeHex(base, -28);
+              ctx.fillStyle = shadeHex(base, -26);
               ctx.fillRect(sx, sy, 2, 2);
             }
+          }
+
+          // TREES — drawn on forest (55% probability) and park (28%) tiles
+          const treeChance = isForest ? 0.55 : isPark ? 0.28 : 0;
+          if (treeChance > 0 && (h2 % 1000) / 1000 < treeChance) {
+            // Deterministic tree position within tile (biased slightly off-center)
+            const treeCX = px + 14 + (h1 % (TILE - 28));
+            const treeCY = py + 14 + (h3 % (TILE - 28));
+
+            // Canopy radius varies by tree "age"
+            const ageSeed = (h1 ^ h3) % 100;
+            const canopyR = isForest
+              ? 14 + (ageSeed % 9)     // forest: bigger trees 14-22px
+              : 10 + (ageSeed % 7);    // park: smaller ornamental trees
+
+            // Shadow (elongated ellipse, NE direction)
+            ctx.fillStyle = "rgba(0,0,0,0.22)";
+            ctx.beginPath();
+            ctx.ellipse(treeCX + 4, treeCY + 6, canopyR * 0.85, canopyR * 0.45, 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Trunk
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#4a3020");
+            ctx.beginPath();
+            ctx.arc(treeCX, treeCY + canopyR * 0.25, 3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Multi-layered canopy for depth
+            const canopyBase = isForest
+              ? timeFilter(state.timeOfDay, "#1e4a10")
+              : timeFilter(state.timeOfDay, "#2a5a18");
+
+            // Outer canopy (darkest — understorey shadow)
+            ctx.fillStyle = shadeHex(canopyBase, -12);
+            ctx.beginPath();
+            ctx.arc(treeCX, treeCY, canopyR, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Mid canopy — main colour
+            ctx.fillStyle = canopyBase;
+            ctx.beginPath();
+            ctx.arc(treeCX - 2, treeCY - 1, canopyR * 0.78, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Secondary cluster offset
+            if (ageSeed % 3 !== 0) {
+              ctx.fillStyle = shadeHex(canopyBase, 8);
+              const offX = ((h2 % 7) - 3);
+              const offY = ((h3 % 7) - 4);
+              ctx.beginPath();
+              ctx.arc(treeCX + offX, treeCY + offY, canopyR * 0.55, 0, Math.PI * 2);
+              ctx.fill();
+            }
+
+            // Sunlit top highlight
+            ctx.fillStyle = timeFilter(state.timeOfDay, shadeHex(canopyBase, 28));
+            ctx.beginPath();
+            ctx.arc(treeCX - canopyR * 0.28, treeCY - canopyR * 0.3, canopyR * 0.3, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Tiny bright specular dot
+            ctx.fillStyle = "rgba(255,255,255,0.18)";
+            ctx.beginPath();
+            ctx.arc(treeCX - canopyR * 0.34, treeCY - canopyR * 0.38, canopyR * 0.12, 0, Math.PI * 2);
+            ctx.fill();
           }
           break;
         }
@@ -380,19 +449,66 @@ export function renderWorld(rc: RenderContext) {
 
         // ─── SAND / BEACH ────────────────────────────────────────────────────────
         case "sand": {
-          const sBase = timeFilter(state.timeOfDay, "#c8ae78");
+          // Warm sandy base — varies slightly per tile for natural look
+          const sandTone = (h1 % 30) - 15; // -15..+15
+          const sBase = timeFilter(state.timeOfDay, shadeHex("#c8ae78", sandTone));
           ctx.fillStyle = sBase;
           ctx.fillRect(px, py, TILE, TILE);
 
-          // Dense fine grain
-          for (let i = 0; i < 18; i++) {
+          // Ripple bands — subtle horizontal streaks imitating tide lines
+          for (let i = 0; i < 4; i++) {
+            const hh = ((h2 * (i + 1)) ^ h3) >>> 0;
+            const ry2 = py + (hh % TILE);
+            const rw2 = 6 + (hh >> 8) % 18;
+            const rx2 = px + (hh >> 3) % (TILE - rw2);
+            ctx.fillStyle = i % 2 === 0 ? "rgba(0,0,0,0.07)" : "rgba(255,255,255,0.11)";
+            ctx.fillRect(rx2, ry2, rw2, 1);
+          }
+
+          // Fine grain speckle
+          for (let i = 0; i < 20; i++) {
             const hh = ((h1 >> (i % 6)) ^ (h3 * i)) >>> 0;
             const sx = px + (hh % TILE);
             const sy = py + ((hh >> 4) % TILE);
-            ctx.fillStyle = i % 3 === 0
-              ? "rgba(0,0,0,0.10)"
-              : "rgba(255,255,255,0.14)";
+            ctx.fillStyle = i % 4 === 0
+              ? "rgba(160,120,60,0.18)"
+              : i % 4 === 1
+                ? "rgba(255,240,200,0.16)"
+                : "rgba(0,0,0,0.07)";
             ctx.fillRect(sx, sy, 1, 1);
+          }
+
+          // Occasional shell / pebble (stable per tile)
+          if ((h3 % 7) === 0) {
+            const sx = px + 8 + (h1 % (TILE - 16));
+            const sy2 = py + 8 + (h2 % (TILE - 16));
+            ctx.fillStyle = "rgba(220,200,160,0.8)";
+            ctx.beginPath();
+            ctx.ellipse(sx, sy2, 3, 2, (h1 % 100) * 0.063, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "rgba(140,110,70,0.5)";
+            ctx.lineWidth = 0.4;
+            ctx.stroke();
+          }
+
+          // Check for water neighbours — draw wet sand edge
+          const wN = world.tiles[y - 1]?.[x]?.type === "water";
+          const wS = world.tiles[y + 1]?.[x]?.type === "water";
+          const wW = world.tiles[y]?.[x - 1]?.type === "water";
+          const wE = world.tiles[y]?.[x + 1]?.type === "water";
+          if (wN || wS || wW || wE) {
+            // Wet sand strip along the water edge — slightly darker & more saturated
+            ctx.fillStyle = timeFilter(state.timeOfDay, "#a89050");
+            if (wN) ctx.fillRect(px, py, TILE, 5);
+            if (wS) ctx.fillRect(px, py + TILE - 5, TILE, 5);
+            if (wW) ctx.fillRect(px, py, 5, TILE);
+            if (wE) ctx.fillRect(px + TILE - 5, py, 5, TILE);
+            // Thin foam line at very edge
+            ctx.fillStyle = "rgba(255,255,255,0.28)";
+            if (wN) ctx.fillRect(px, py, TILE, 1);
+            if (wS) ctx.fillRect(px, py + TILE - 1, TILE, 1);
+            if (wW) ctx.fillRect(px, py, 1, TILE);
+            if (wE) ctx.fillRect(px + TILE - 1, py, 1, TILE);
           }
           break;
         }
