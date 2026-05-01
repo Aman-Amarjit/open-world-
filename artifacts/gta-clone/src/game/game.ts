@@ -319,6 +319,9 @@ export function tick(game: Game, dt: number) {
   // Player input -> movement (skip while end-screen overlay is up or cutscene is playing)
   if (!state.endScreen && !state.story.cutscene) {
     applyPlayerInput(state, dt);
+  } else if (state.story.cutscene) {
+    // Keep player (and vehicle) frozen every tick — prevents physics drift
+    freezePlayerForCutscene(state);
   }
 
   // Update vehicles
@@ -2139,6 +2142,24 @@ function tickStory(state: GameState, world: WorldData, dt: number) {
   }
 }
 
+// Zeroes player velocity and their vehicle when a cutscene begins,
+// so carried momentum doesn't slide the player through the scene.
+function freezePlayerForCutscene(state: GameState) {
+  const p = state.player;
+  p.vx = 0;
+  p.vy = 0;
+  if (p.inVehicle) {
+    const v = p.inVehicle;
+    v.vx = 0;
+    v.vy = 0;
+    v.speed = 0;
+    v.throttle = 0;
+    v.brake = 0;
+    v.steer = 0;
+    v.handbrake = 0;
+  }
+}
+
 // Called when a story mission marker is stepped on — begins intro cutscene
 function activateStoryCutscene(
   state: GameState,
@@ -2148,6 +2169,7 @@ function activateStoryCutscene(
 ) {
   const def = STORY_MISSIONS[missionIdx];
   if (!def) return;
+  freezePlayerForCutscene(state);
   state.story.cutscene = {
     lines: def.intro,
     index: 0,
@@ -2163,6 +2185,7 @@ function activateStoryCutscene(
 function beginStoryOutro(state: GameState, missionIdx: number) {
   const def = STORY_MISSIONS[missionIdx];
   if (!def) return;
+  freezePlayerForCutscene(state);
   state.story.cutscene = {
     lines: def.outro,
     index: 0,
