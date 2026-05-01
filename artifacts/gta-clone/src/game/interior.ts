@@ -142,13 +142,42 @@ export const INTERIOR_SHOP_INFO: Record<
   { label: string; cost: number; cooldown: number }
 > = {
   hospital:    { label: "Heal at counter — $50", cost: 50,  cooldown: 1.5 },
-  gun_shop:    { label: "Buy pistol + 50 rounds — $100", cost: 100, cooldown: 1.5 },
-  ammu:        { label: "Buy SMG + 100 rounds — $200", cost: 200, cooldown: 1.5 },
+  gun_shop:    { label: "Browse weapons [E]", cost: 0, cooldown: 1.5 },
+  ammu:        { label: "Browse weapons [E]", cost: 0, cooldown: 1.5 },
   food:        { label: "Order food (free) +25 HP", cost: 0,   cooldown: 1.5 },
   safehouse:   { label: "Save spawn (free) — full heal", cost: 0,   cooldown: 1.5 },
   pay_n_spray: { label: "Respray car — $100", cost: 100, cooldown: 1.5 },
   gym:         { label: "Train hard — $150 (+20 Max HP)", cost: 150, cooldown: 2.0 },
 };
+
+// ── GUN SHOP CATALOG ──────────────────────────────────────────────────────────
+export interface GunShopItem {
+  id: string;
+  label: string;
+  desc: string;
+  icon: string;
+  cost: number;
+  givesGun?: import("./types").WeaponKind;
+  givesAmmo?: number;
+}
+
+export const GUN_SHOP_ITEMS: GunShopItem[] = [
+  { id: "pistol_gun",    label: "Pistol",           desc: "24 rounds included",  icon: "🔫", cost: 500,  givesGun: "pistol",   givesAmmo: 24 },
+  { id: "pistol_ammo",   label: "Pistol Ammo ×30",  desc: "+30 rounds",          icon: "🔵", cost: 100,  givesAmmo: 30 },
+  { id: "shotgun_gun",   label: "Shotgun",           desc: "8 shells included",   icon: "💥", cost: 900,  givesGun: "shotgun",  givesAmmo: 8  },
+  { id: "shotgun_ammo",  label: "Shotgun Shells ×8", desc: "+8 shells",           icon: "🟡", cost: 200,  givesAmmo: 8  },
+  { id: "rifle_gun",     label: "Rifle",             desc: "20 rounds included",  icon: "🎯", cost: 1400, givesGun: "rifle",    givesAmmo: 20 },
+  { id: "rifle_ammo",    label: "Rifle Ammo ×20",    desc: "+20 rounds",          icon: "🟢", cost: 350,  givesAmmo: 20 },
+];
+
+export const AMMU_SHOP_ITEMS: GunShopItem[] = [
+  { id: "smg_gun",       label: "SMG",               desc: "60 rounds included",  icon: "🔫", cost: 700,  givesGun: "smg",     givesAmmo: 60 },
+  { id: "smg_ammo",      label: "SMG Ammo ×50",       desc: "+50 rounds",          icon: "🔵", cost: 150,  givesAmmo: 50 },
+  { id: "sniper_gun",    label: "Sniper Rifle",       desc: "6 rounds included",   icon: "🎯", cost: 2000, givesGun: "sniper",  givesAmmo: 6  },
+  { id: "sniper_ammo",   label: "Sniper Rounds ×6",   desc: "+6 rounds",           icon: "🟢", cost: 400,  givesAmmo: 6  },
+  { id: "rpg_gun",       label: "RPG",                desc: "3 rockets included",  icon: "🚀", cost: 5000, givesGun: "rpg",     givesAmmo: 3  },
+  { id: "rpg_ammo",      label: "Rockets ×2",         desc: "+2 rockets",          icon: "🔴", cost: 800,  givesAmmo: 2  },
+];
 
 // ---- GENERATION ----
 // Shops are entered on foot. pay_n_spray is handled by the legacy overlay.
@@ -554,8 +583,81 @@ export function updateInterior(state: GameState, dt: number) {
   ir.flashTimer = Math.max(0, ir.flashTimer - dt);
   if (ir.bannerTimer > 0) ir.bannerTimer = Math.max(0, ir.bannerTimer - dt);
 
-  // PLAYER MOVEMENT
+  // GUN SHOP MENU NAVIGATION — intercept all input when open
   const inp = state.input;
+  if (state.gunShopMenu) {
+    const menu = state.gunShopMenu;
+    const items = menu.shopKind === "gun_shop" ? GUN_SHOP_ITEMS : AMMU_SHOP_ITEMS;
+    if (inp.up) {
+      inp.up = false;
+      menu.selectedIdx = (menu.selectedIdx - 1 + items.length) % items.length;
+    }
+    if (inp.down) {
+      inp.down = false;
+      menu.selectedIdx = (menu.selectedIdx + 1) % items.length;
+    }
+    if (inp.enter) {
+      inp.enter = false;
+      const item = items[menu.selectedIdx];
+      const p = state.player;
+      if (state.money < item.cost) {
+        ir.bannerMsg = `NEED $${item.cost} — only have $${state.money}`;
+        ir.bannerTimer = 1.6;
+        ir.flashColor = "#ff5050";
+        ir.flashTimer = 0.3;
+      } else {
+        state.money -= item.cost;
+        let msg = "";
+        if (item.givesGun) {
+          // Give the gun if not already owned
+          if (!p.ownedGuns.includes(item.givesGun)) {
+            p.ownedGuns.push(item.givesGun);
+          }
+          p.weapon = item.givesGun;
+          p.ammo += item.givesAmmo ?? 0;
+          msg = `${item.label.toUpperCase()} PURCHASED — ${item.givesAmmo} ROUNDS`;
+          ir.flashColor = "#cce8ff";
+        } else {
+          // Just ammo — only if they own a compatible gun
+          p.ammo += item.givesAmmo ?? 0;
+          msg = `AMMO +${item.givesAmmo}`;
+          ir.flashColor = "#ffdd80";
+        }
+        ir.bannerMsg = msg;
+        ir.bannerTimer = 1.6;
+        ir.flashTimer = 0.4;
+        ir.actionCooldown = 0.6;
+        state.notifications.push({ text: msg, life: 2, color: ir.signColor });
+        playInteriorChime();
+        // Spark burst
+        for (let i = 0; i < 12; i++) {
+          const a = Math.random() * Math.PI * 2;
+          ir.particles.push({
+            x: ir.interact.x + ir.interact.w / 2,
+            y: ir.interact.y + ir.interact.h / 2,
+            vx: Math.cos(a) * rand(20, 70),
+            vy: Math.sin(a) * rand(20, 70) - 25,
+            life: 0.7,
+            maxLife: 0.7,
+            size: 1.4,
+            kind: "spark",
+            color: ir.flashColor,
+            rotation: 0,
+            rotationSpeed: 0,
+          });
+        }
+      }
+    }
+    // Close menu with Escape / Q or left key
+    if (inp.left || inp.handbrake) {
+      inp.left = false;
+      inp.handbrake = false;
+      state.gunShopMenu = null;
+    }
+    return; // block all other interior logic while menu is open
+  }
+
+  // PLAYER MOVEMENT
   let mx = 0, my = 0;
   if (inp.up) my -= 1;
   if (inp.down) my += 1;
@@ -756,19 +858,14 @@ function triggerInteriorAction(state: GameState) {
       ir.flashColor = "#fff048";
       break;
     case "gun_shop":
-      p.ammo += 50;
-      if (p.weapon === "fist") p.weapon = "pistol";
-      state.money -= info.cost;
-      msg = "PISTOL +50 ROUNDS";
-      ir.flashColor = "#cce8ff";
-      break;
+      // Open the weapons catalog menu instead of buying directly
+      state.gunShopMenu = { shopKind: "gun_shop", selectedIdx: 0 };
+      ir.actionCooldown = 0.3;
+      return;
     case "ammu":
-      p.ammo += 100;
-      p.weapon = "smg";
-      state.money -= info.cost;
-      msg = "SMG +100 ROUNDS";
-      ir.flashColor = "#ffaa30";
-      break;
+      state.gunShopMenu = { shopKind: "ammu", selectedIdx: 0 };
+      ir.actionCooldown = 0.3;
+      return;
     case "safehouse":
       state.spawnPoint = { x: state.interiorReturnX, y: state.interiorReturnY };
       p.hp = p.maxHp;

@@ -2,6 +2,7 @@ import type { GameState, WeaponKind } from "@/game/types";
 import { TILE } from "@/game/world";
 import type { WorldData, ShopKind } from "@/game/world";
 import { STORY_MISSIONS, ACT_INTROS } from "@/game/story";
+import { GUN_SHOP_ITEMS, AMMU_SHOP_ITEMS } from "@/game/interior";
 
 interface Props {
   state: GameState;
@@ -10,8 +11,8 @@ interface Props {
 
 const SHOP_PROMPTS: Record<ShopKind, string> = {
   hospital: "Enter Hospital — $50",
-  gun_shop: "Buy Pistol Ammo — $100",
-  ammu: "Buy SMG — $200",
+  gun_shop: "Browse weapons catalog",
+  ammu: "Browse ammo & weapons",
   food: "Eat (free) — +25 HP",
   pay_n_spray: "Pay 'n' Spray — $100 (need car)",
   safehouse: "Save Spawn (free)",
@@ -511,40 +512,103 @@ export function HUD({ state, world }: Props) {
         <span>P pause</span>
       </div>
 
-      {/* Weapon Wheel Overlay */}
+      {/* Gun Shop Menu Overlay */}
+      {state.gunShopMenu && state.interior && (() => {
+        const menu = state.gunShopMenu!;
+        const items = menu.shopKind === "gun_shop" ? GUN_SHOP_ITEMS : AMMU_SHOP_ITEMS;
+        const shopName = menu.shopKind === "gun_shop" ? "AMMU-NATION" : "GUN STORE";
+        const shopColor = menu.shopKind === "gun_shop" ? "#a8e0ff" : "#ff7a30";
+        return (
+          <div className="hud-gun-shop-overlay">
+            <div className="gun-shop-panel" style={{ borderColor: shopColor }}>
+              <div className="gun-shop-header" style={{ color: shopColor, borderBottomColor: shopColor }}>
+                🏪 {shopName}
+                <span className="gun-shop-wallet">💵 ${state.money}</span>
+              </div>
+              <div className="gun-shop-item-list">
+                {items.map((item, idx) => {
+                  const canAfford = state.money >= item.cost;
+                  const alreadyOwn = item.givesGun && state.player.ownedGuns.includes(item.givesGun);
+                  const isSelected = idx === menu.selectedIdx;
+                  return (
+                    <div
+                      key={item.id}
+                      className={`gun-shop-item ${isSelected ? "selected" : ""} ${!canAfford ? "unaffordable" : ""}`}
+                      style={isSelected ? { borderColor: shopColor, backgroundColor: `${shopColor}22` } : {}}
+                      onMouseEnter={() => { menu.selectedIdx = idx; }}
+                      onClick={() => {
+                        menu.selectedIdx = idx;
+                        // Simulate pressing enter
+                        state.input.enter = true;
+                      }}
+                    >
+                      <span className="gun-shop-icon">{item.icon}</span>
+                      <div className="gun-shop-item-info">
+                        <div className="gun-shop-item-name">
+                          {item.label}
+                          {alreadyOwn && <span className="gun-shop-owned"> (owned)</span>}
+                        </div>
+                        <div className="gun-shop-item-desc">{item.desc}</div>
+                      </div>
+                      <div className={`gun-shop-item-cost ${!canAfford ? "cant-afford" : ""}`}>
+                        ${item.cost}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div className="gun-shop-hint">
+                <kbd>W/S</kbd> navigate · <kbd>E</kbd> buy · <kbd>A</kbd> close
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Weapon Wheel Overlay — only shows fist + owned guns */}
       {state.input.weaponWheelOpen && (
         <div className="hud-weapon-wheel" onClick={() => (state.input.weaponWheelOpen = false)}>
           <div className="wheel-container" onClick={(e) => e.stopPropagation()}>
             <div className="wheel-center">
               <div className="wheel-center-label">{state.player.weapon.toUpperCase()}</div>
+              <div className="wheel-center-ammo">{state.player.weapon !== "fist" ? `${state.player.ammo} rds` : ""}</div>
             </div>
             {(
               [
                 { kind: "fist" as WeaponKind, icon: "👊" },
                 { kind: "pistol" as WeaponKind, icon: "🔫" },
                 { kind: "smg" as WeaponKind, icon: "📟" },
-                { kind: "shotgun" as WeaponKind, icon: "🎒" },
+                { kind: "shotgun" as WeaponKind, icon: "💥" },
                 { kind: "rifle" as WeaponKind, icon: "🏹" },
                 { kind: "sniper" as WeaponKind, icon: "🔭" },
                 { kind: "rpg" as WeaponKind, icon: "🚀" },
                 { kind: "flamethrower" as WeaponKind, icon: "🔥" },
               ] as { kind: WeaponKind; icon: string }[]
-            ).map((w, i, arr) => {
+            )
+            .filter(w => w.kind === "fist" || state.player.ownedGuns.includes(w.kind))
+            .map((w, i, arr) => {
               const angle = (i / arr.length) * Math.PI * 2 - Math.PI / 2;
-              const x = 250 + Math.cos(angle) * 180;
-              const y = 250 + Math.sin(angle) * 180;
+              const radius = arr.length <= 2 ? 100 : 180;
+              const x = 250 + Math.cos(angle) * radius;
+              const y = 250 + Math.sin(angle) * radius;
+              const canUse = w.kind === "fist" || state.player.ammo > 0;
               return (
                 <div
                   key={w.kind}
-                  className={`wheel-item ${state.player.weapon === w.kind ? "active" : ""}`}
+                  className={`wheel-item ${state.player.weapon === w.kind ? "active" : ""} ${!canUse ? "empty" : ""}`}
                   style={{ left: x, top: y }}
                   onClick={() => {
-                    state.player.weapon = w.kind;
-                    state.input.weaponWheelOpen = false;
+                    if (canUse || w.kind === "fist") {
+                      state.player.weapon = w.kind;
+                      state.input.weaponWheelOpen = false;
+                    }
                   }}
                 >
                   <div className="wheel-item-icon">{w.icon}</div>
                   <div className="wheel-item-label">{w.kind}</div>
+                  {!canUse && w.kind !== "fist" && (
+                    <div className="wheel-item-empty">EMPTY</div>
+                  )}
                 </div>
               );
             })}

@@ -153,8 +153,8 @@ const HUMAN_SPECS: Record<
   player: {
     hp: 100,
     speed: 60,
-    weapon: "pistol",
-    ammo: 24,
+    weapon: "fist",
+    ammo: 0,
     shirts: ["#ffd040"],
     pants: ["#3a3a8a"],
     hairs: ["#3a2a1a"],
@@ -225,6 +225,7 @@ export function createHuman(
     hairColor: pick(spec.hairs),
     weapon: spec.weapon,
     ammo: spec.ammo,
+    ownedGuns: spec.weapon !== "fist" ? [spec.weapon] : [],
     fireTimer: 0,
     punchTimer: 0,
     isPlayer: kind === "player",

@@ -709,3 +709,167 @@ html, body, #root {
   letter-spacing: 0.2em;
   text-shadow: 0 0 20px rgba(60, 120, 255, 0.8);
 }
+
+.wheel-center-ammo {
+  font-size: 13px;
+  color: #a8c8e8;
+  margin-top: 4px;
+  letter-spacing: 0.1em;
+}
+
+.wheel-item.empty {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.wheel-item-empty {
+  font-size: 9px;
+  color: #ff5050;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+}
+
+/* ── Gun Shop Menu ─────────────────────────────────── */
+.hud-gun-shop-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.72);
+  z-index: 110;
+  pointer-events: auto;
+  backdrop-filter: blur(6px);
+  animation: gun-shop-in 0.18s ease-out;
+}
+
+@keyframes gun-shop-in {
+  from { opacity: 0; transform: scale(0.94) translateY(12px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.gun-shop-panel {
+  background: linear-gradient(160deg, rgba(12, 18, 28, 0.97), rgba(6, 10, 18, 0.98));
+  border: 2px solid;
+  border-radius: 12px;
+  width: 460px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: 0 0 60px rgba(0, 0, 0, 0.8), inset 0 0 30px rgba(0, 0, 0, 0.4);
+}
+
+.gun-shop-header {
+  padding: 16px 20px;
+  font-size: 20px;
+  font-weight: 900;
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.15em;
+  text-transform: uppercase;
+  border-bottom: 1px solid;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.gun-shop-wallet {
+  font-size: 15px;
+  font-weight: 700;
+  color: #88ee88;
+}
+
+.gun-shop-item-list {
+  padding: 10px 0;
+  overflow-y: auto;
+  max-height: 55vh;
+}
+
+.gun-shop-item {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 11px 20px;
+  cursor: pointer;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  margin: 3px 10px;
+  transition: all 0.1s;
+  color: #d4d8e8;
+}
+
+.gun-shop-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.gun-shop-item.selected {
+  border-radius: 8px;
+}
+
+.gun-shop-item.unaffordable {
+  opacity: 0.5;
+}
+
+.gun-shop-icon {
+  font-size: 26px;
+  min-width: 32px;
+  text-align: center;
+}
+
+.gun-shop-item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.gun-shop-item-name {
+  font-size: 14px;
+  font-weight: 700;
+  font-family: 'Courier New', monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #e8eaf0;
+}
+
+.gun-shop-owned {
+  font-size: 11px;
+  color: #60c070;
+  text-transform: lowercase;
+  letter-spacing: normal;
+  font-weight: 500;
+}
+
+.gun-shop-item-desc {
+  font-size: 11px;
+  color: #7880a0;
+  margin-top: 2px;
+}
+
+.gun-shop-item-cost {
+  font-size: 15px;
+  font-weight: 900;
+  font-family: 'Courier New', monospace;
+  color: #88ee88;
+  min-width: 60px;
+  text-align: right;
+}
+
+.gun-shop-item-cost.cant-afford {
+  color: #ff5050;
+}
+
+.gun-shop-hint {
+  padding: 12px 20px;
+  font-size: 11px;
+  color: #505870;
+  text-align: center;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: 'Courier New', monospace;
+  letter-spacing: 0.08em;
+}
+
+.gun-shop-hint kbd {
+  background: rgba(255, 255, 255, 0.1);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 4px;
+  padding: 1px 5px;
+  font-size: 10px;
+  color: #90a0b8;
+}

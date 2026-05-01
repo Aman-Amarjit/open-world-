@@ -127,6 +127,7 @@ export interface Human {
   hairColor: string;
   weapon: WeaponKind;
   ammo: number;
+  ownedGuns: WeaponKind[];
   fireTimer: number;
   // Melee swing animation: 0..PUNCH_DURATION; sprite extends the lead arm
   // forward while > 0. Drives both player and AI fist attacks.
@@ -418,6 +419,11 @@ export interface GameState {
   interiorReturnY: number;
   // True when player stands in the shop's interaction zone (HUD prompt).
   interiorInteractActive: boolean;
+  // Gun/ammo shop catalog overlay (null = closed)
+  gunShopMenu: {
+    shopKind: "gun_shop" | "ammu";
+    selectedIdx: number;
+  } | null;
   // ---- MISSIONS ----
   // Pool of missions waiting on the map (player walks over icon to start).
   missions: Mission[];

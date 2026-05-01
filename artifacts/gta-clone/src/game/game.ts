@@ -113,6 +113,7 @@ export function createGame(seed = 42): Game {
     interiorReturnX: spawn.x,
     interiorReturnY: spawn.y,
     interiorInteractActive: false,
+    gunShopMenu: null,
     missions: [],
     activeMission: null,
     missionsCompleted: 0,
@@ -522,9 +523,16 @@ export function tick(game: Game, dt: number) {
       state.combatTimer = 0;
       state.money = Math.floor(state.money * (wasBusted ? 0.7 : 0.5));
       if (wasBusted) {
-        // Strip ammo down so the player can't immediately re-aggro
+        // Police confiscate all weapons on arrest
         state.player.ammo = 0;
         state.player.weapon = "fist";
+        state.player.ownedGuns = [];
+      } else {
+        // Death — drop half ammo, keep guns
+        state.player.ammo = Math.floor(state.player.ammo * 0.5);
+        if (state.player.ammo === 0 && state.player.weapon !== "fist") {
+          state.player.weapon = "fist";
+        }
       }
       // Cancel any active mission (story or random) on death/arrest
       if (state.activeMission) {
@@ -699,7 +707,12 @@ function tryFire(state: GameState, p: Human) {
     return;
   }
   if (p.fireTimer > 0) return;
-  if (p.ammo <= 0 && !p.isPlayer) {
+  if (p.ammo <= 0) {
+    // Out of ammo — switch to fist for everyone (player included)
+    p.weapon = "fist";
+    if (p.isPlayer) {
+      state.notifications.push({ text: "OUT OF AMMO — switch to fists", life: 2, color: "#ff8040" });
+    }
     tryPunch(state, p);
     return;
   }
