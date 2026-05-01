@@ -25,3 +25,19 @@ pnpm workspace monorepo using TypeScript. Each package manages its own dependenc
 - `pnpm --filter @workspace/api-server run dev` — run API server locally
 
 See the `pnpm-workspace` skill for workspace structure, TypeScript setup, and package details.
+
+## Artifacts
+
+### `artifacts/gta-clone` — South Island City
+A top-down 2D crime/driving game in the spirit of GTA1. Pure Canvas 2D — every sprite is bezier-path drawn (no images, no 3D). React + Vite + TypeScript. Served at `/` (root).
+
+Game systems: procedural city world, AI pedestrians/police/gangs, physics engine, Web Audio synthesized music, mission system, enterable shop interiors, day/night cycle, weather system, weapon wheel, fistfighting. 
+
+Key game files in `src/game/`: `world.ts`, `render.ts`, `physics.ts`, `ai.ts`, `audio.ts`, `game.ts`, `sprites.ts`, `input.ts`, `interior.ts`, `types.ts`, `factory.ts`, `utils.ts`.
+UI: `src/components/GameCanvas.tsx`, `src/components/HUD.tsx`, `src/components/TitleOverlay.tsx`.
+
+### `artifacts/api-server` — API Server
+Express 5 backend served at `/api`. Currently has only a health check endpoint (`/api/healthz`). The game doesn't require a backend (all game state is client-side).
+
+### `artifacts/mockup-sandbox` — Canvas/Mockup Sandbox
+Design prototyping sandbox served at `/__mockup`.
